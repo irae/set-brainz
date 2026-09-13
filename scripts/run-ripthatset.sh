@@ -6,4 +6,8 @@
 set -euo pipefail
 
 file="${1:?audio file}"
+
+# RipThatSet writes ~2500 WAV chunks to $TMPDIR. /tmp is RAM on Arch, so use disk.
+export TMPDIR="$PWD/.tmp"
+mkdir -p "$TMPDIR"
 ripthatset/.venv/bin/ripthatset "$file" --cpu-count 1 --json-output ripthatset-run.json 2>&1 | tee ripthatset-run.log

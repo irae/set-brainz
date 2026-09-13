@@ -6,3 +6,4 @@ ripthatset/
 *-run*.json
 *-run*.log
 results/
+.tmp/
