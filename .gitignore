@@ -3,3 +3,5 @@ tracklistify/
 ripthatset/
 *.log
 .tracklistify/
+*-run*.json
+*-run*.log
