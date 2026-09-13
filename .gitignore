@@ -5,3 +5,4 @@ ripthatset/
 .tracklistify/
 *-run*.json
 *-run*.log
+results/
