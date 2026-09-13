@@ -25,3 +25,6 @@ Scripts, in run order:
 3. `scripts/install-ripthatset.sh` then `scripts/run-ripthatset.sh audio/<file>.mp3`. Run after Tracklistify, not with it.
 
 Audio, tool clones, logs, and result files stay out of git.
+4. `scripts/merge-results.py` — merges both results into `results/merged.md`, all variants kept.
+5. `scripts/build-table.py <video-id>` — builds `results/tracklist.html` with a player and jump links.
+6. `scripts/serve-results.sh` — serves `results/` on port 8765 and opens the table. The YouTube embed refuses `file://` pages.
