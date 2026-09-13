@@ -76,7 +76,8 @@ def tracklistify_hits(path):
         h, m, s = map(int, t["time_in_mix"].split(":"))
         start = h * 3600 + m * 60 + s
         out.append({"src": "T", "artist": t["artist"], "title": t["song_name"],
-                    "start": start, "end": start + 60, "count": 1, "conf": t["confidence"]})
+                    "start": start, "end": start + 60, "count": 1, "conf": t["confidence"],
+                    "links": (t.get("metadata") or {}).get("links") or {}})
     return out
 
 
@@ -119,15 +120,16 @@ def main():
     lines = ["# Merged tracklist", "",
              "Sources: T = Tracklistify (60 s segments, Shazam), R = RipThatSet (12 s chunks, Shazam).",
              "Start is the earliest hit from any source. Both = seen by both tools.", "",
-             "| # | Start | End | Artist | Track | Both | Variants |", "|---|---|---|---|---|---|---|"]
+             "| # | Start | End | Track | Artist | Both | Variants |", "|---|---|---|---|---|---|---|"]
     for i, t in enumerate(tracks, 1):
         srcs = {s for v in t["variants"].values() for s in ("T", "R") if v[s]}
         both = "yes" if srcs == {"T", "R"} else ""
         first = next(iter(t["variants"]))
         variants = "<br>".join(variant_line(k, v) for k, v in t["variants"].items())
-        lines.append(f"| {i} | {hms(t['start'])} | {hms(t['end'])} | {t['artist']} | {base_title(first).title()} | {both} | {variants} |")
+        lines.append(f"| {i} | {hms(t['start'])} | {hms(t['end'])} | {base_title(first).title()} | {t['artist']} | {both} | {variants} |")
     open("results/merged.md", "w").write("\n".join(lines) + "\n")
     print(f"{len(tracks)} tracks, {sum(1 for t in tracks if len(t['variants']) > 1)} with several variants")
 
 
-main()
+if __name__ == "__main__":
+    main()
