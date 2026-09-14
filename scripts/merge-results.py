@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Merge Tracklistify (results/tracklist.json) and RipThatSet (ripthatset-run.log)
-# into results/merged.md. Every remix/version variant is kept, never collapsed.
-# Usage: scripts/merge-results.py
-import json, re
+# Merge the Tracklistify and RipThatSet runs in data/runs/<video-id>/
+# into data/views/<video-id>/merged.md. Every remix/version variant is kept, never collapsed.
+# Usage: scripts/merge-results.py <video-id>
+import json, os, re, sys
 from collections import defaultdict
 
 SEG = 12                       # RipThatSet chunk length in seconds
@@ -113,9 +113,11 @@ def variant_line(title, v):
 
 
 def main():
-    log = "ripthatset-run.log"
+    vid = sys.argv[1]
+    runs = f"data/runs/{vid}"
+    log = f"{runs}/ripthatset/run.log"
     total = int(re.search(r"Processing (\d+) segments", open(log, errors="replace").read()).group(1))
-    events = tracklistify_hits("results/tracklist.json") + ripthatset_runs(log, total)
+    events = tracklistify_hits(f"{runs}/tracklistify/tracklist.json") + ripthatset_runs(log, total)
     tracks = merge(events)
     lines = ["# Merged tracklist", "",
              "Sources: T = Tracklistify (60 s segments, Shazam), R = RipThatSet (12 s chunks, Shazam).",
@@ -127,7 +129,8 @@ def main():
         first = next(iter(t["variants"]))
         variants = "<br>".join(variant_line(k, v) for k, v in t["variants"].items())
         lines.append(f"| {i} | {hms(t['start'])} | {hms(t['end'])} | {base_title(first).title()} | {t['artist']} | {both} | {variants} |")
-    open("results/merged.md", "w").write("\n".join(lines) + "\n")
+    os.makedirs(f"data/views/{vid}", exist_ok=True)
+    open(f"data/views/{vid}/merged.md", "w").write("\n".join(lines) + "\n")
     print(f"{len(tracks)} tracks, {sum(1 for t in tracks if len(t['variants']) > 1)} with several variants")
 
 

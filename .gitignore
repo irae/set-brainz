@@ -1,9 +1,4 @@
-audio/
-tracklistify/
-ripthatset/
-*.log
-.tracklistify/
-*-run*.json
-*-run*.log
-results/
-.tmp/
+data/
+tools/
+.claude/
+__pycache__/

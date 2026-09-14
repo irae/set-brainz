@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-# Build results/tracklist.html: YouTube player on top, one row per track slot,
+# Build data/views/<video-id>/tracklist.html: YouTube player on top, one row per track slot,
 # jump links, best/alternative guesses, ID rows for gaps, and search links.
 # Reads the same inputs as merge-results.py. Warns on odd data and continues.
 # Usage: scripts/build-table.py <youtube-video-id>
-import html, importlib.util, json, re, sys
+import html, importlib.util, json, os, re, sys
 from urllib.parse import quote
 
 spec = importlib.util.spec_from_file_location("merge", "scripts/merge-results.py")
 merge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(merge)
 
-VIDEO = sys.argv[1] if len(sys.argv) > 1 else "VIDEO_ID"
+VIDEO = sys.argv[1]
 LOW_CONF = 75          # below this a hit is "ID, maybe <x>"
 ID_GAP = 90            # seconds with no hit from any tool = ID row
 warn = lambda m: print("warning:", m, file=sys.stderr)
@@ -89,9 +89,10 @@ def id_row(start, end):
 
 
 def main():
-    log = "ripthatset-run.log"
+    runs = f"data/runs/{VIDEO}"
+    log = f"{runs}/ripthatset/run.log"
     total = int(re.search(r"Processing (\d+) segments", open(log, errors="replace").read()).group(1))
-    events = merge.tracklistify_hits("results/tracklist.json") + merge.ripthatset_runs(log, total)
+    events = merge.tracklistify_hits(f"{runs}/tracklistify/tracklist.json") + merge.ripthatset_runs(log, total)
     tracks = merge.merge(events)
     rows = build_rows(tracks, total * merge.SEG)
     page = f"""<!doctype html><meta charset="utf-8"><title>Tracklist</title>
@@ -117,8 +118,9 @@ function onYouTubeIframeAPIReady(){{p=new YT.Player('yt',{{videoId:'{VIDEO}',wid
 document.addEventListener('click',e=>{{const a=e.target.closest('a.j');if(!a)return;e.preventDefault();
 p.seekTo(+a.dataset.t,true);p.playVideo();}});
 </script>"""
-    open("results/tracklist.html", "w").write(page)
-    print(f"{len(rows)} rows written to results/tracklist.html")
+    os.makedirs(f"data/views/{VIDEO}", exist_ok=True)
+    open(f"data/views/{VIDEO}/tracklist.html", "w").write(page)
+    print(f"{len(rows)} rows written to data/views/{VIDEO}/tracklist.html")
 
 
 main()

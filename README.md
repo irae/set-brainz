@@ -20,11 +20,24 @@ Next step: test Tracklistify or SongRec on one set for a baseline, then test Pan
 
 Scripts, in run order:
 
-1. `scripts/download-audio.sh <youtube-url>` — audio-only download into `audio/`, plus an MP3 copy.
-2. `scripts/install-tracklistify.sh` then `scripts/run-tracklistify.sh audio/<file>.mp3`.
-3. `scripts/install-ripthatset.sh` then `scripts/run-ripthatset.sh audio/<file>.mp3`. Run after Tracklistify, not with it.
+1. `scripts/download-audio.sh <youtube-url>` — audio-only download into `data/audio/<video-id>/`, plus an MP3 copy.
+2. `scripts/install-tracklistify.sh` then `scripts/run-tracklistify.sh <video-id>`.
+3. `scripts/install-ripthatset.sh` then `scripts/run-ripthatset.sh <video-id>`. Run after Tracklistify, not with it.
+4. `scripts/merge-results.py <video-id>` — merges both runs into `data/views/<video-id>/merged.md`, all variants kept.
+5. `scripts/build-table.py <video-id>` — builds `data/views/<video-id>/tracklist.html` with a player and jump links.
+6. `scripts/serve-results.sh <video-id>` — serves `data/views/` on port 8765 and opens the table. The YouTube embed refuses `file://` pages.
 
-Audio, tool clones, logs, and result files stay out of git.
-4. `scripts/merge-results.py` — merges both results into `results/merged.md`, all variants kept.
-5. `scripts/build-table.py <video-id>` — builds `results/tracklist.html` with a player and jump links.
-6. `scripts/serve-results.sh` — serves `results/` on port 8765 and opens the table. The YouTube embed refuses `file://` pages.
+Local data:
+
+All local data lives in `data/`. Third-party tool clones live in `tools/`. Git ignores both folders. No tracked file names a video.
+
+| Path | Content |
+|---|---|
+| `data/audio/<video-id>/` | downloaded audio and the MP3 copy |
+| `data/runs/<video-id>/tracklistify/` | Tracklistify log and tracklist files |
+| `data/runs/<video-id>/ripthatset/` | RipThatSet log and JSON |
+| `data/views/<video-id>/` | generated Markdown and HTML views |
+| `data/merged/<video-id>/` | merged JSON files, planned |
+| `data/decisions/` | decision files, planned |
+| `data/tmp/` | temporary audio chunks |
+| `tools/tracklistify/`, `tools/ripthatset/` | tool clones with their own environments |
