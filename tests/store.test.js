@@ -458,10 +458,46 @@ test('store changes (functional)', (t) => {
     const contentAfterFirstChange = readFileSync(decisionsFilePath, 'utf8')
     await updateRow(videoId, decisionB.id, { note: 'from B' })
 
-    const after = getSet(videoId)
-    t.equal(after.rows[0].note, 'from A')
-    t.equal(after.rows[1].note, 'from B')
+    const onDisk = JSON.parse(readFileSync(decisionsFilePath, 'utf8'))
+    t.equal(onDisk.rows[0].note, 'from A')
+    t.equal(onDisk.rows[1].note, 'from B')
     t.equal(readFileSync(prevFilePath, 'utf8'), contentAfterFirstChange)
+    t.end()
+  })
+
+  t.test('it leaves an earlier .prev.json untouched when a change is refused', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO25'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    const prevFilePath = join(dir, 'decisions', `${videoId}.prev.json`)
+
+    await updateRow(videoId, before.rows[0].id, { note: 'kept' })
+    const prevContentBeforeRefusal = readFileSync(prevFilePath, 'utf8')
+
+    t.throws(() => mergeRow(videoId, before.rows[0].id, 'up'))
+    t.throws(() => updateRow(videoId, 'no-such-row', { note: 'nope' }))
+
+    t.equal(readFileSync(prevFilePath, 'utf8'), prevContentBeforeRefusal)
+    t.end()
+  })
+
+  t.test('it creates no .prev.json when a change is refused and none existed', (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO26'
+    const rowA = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA] })
+    const before = getSet(videoId)
+    const prevFilePath = join(dir, 'decisions', `${videoId}.prev.json`)
+
+    t.throws(() => mergeRow(videoId, before.rows[0].id, 'up'))
+    t.throws(() => updateRow(videoId, 'no-such-row', { note: 'nope' }))
+
+    t.notOk(existsSync(prevFilePath))
     t.end()
   })
 
