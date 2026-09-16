@@ -1,12 +1,10 @@
 import { test } from 'tap'
 import { once } from 'node:events'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile } from './helpers/fixtures.js'
 import { createApp } from '../app/server.js'
-
-const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'app', 'public')
 
 async function startServer(t, dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
@@ -17,18 +15,10 @@ async function startServer(t, dir) {
   return `http://127.0.0.1:${server.address().port}`
 }
 
-function withShellFile(t, name, content) {
-  mkdirSync(publicDir, { recursive: true })
-  const path = join(publicDir, name)
-  const existedBefore = existsSync(path)
-  const original = existedBefore ? readFileSync(path, 'utf8') : null
-  writeFileSync(path, content)
-  const restore = () => {
-    if (existedBefore) writeFileSync(path, original)
-    else rmSync(path, { force: true })
-  }
-  process.on('exit', restore)
-  t.teardown(restore)
+function makeTempPublicDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'set-brainz-public-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  return dir
 }
 
 test('api sets (functional)', (t) => {
@@ -322,9 +312,14 @@ test('api error handling (functional)', (t) => {
 })
 
 test('static files (functional)', (t) => {
-  t.test('it serves the set page shell for GET /sets/:videoId', async (t) => {
-    withShellFile(t, 'set.html', '<!doctype html><title>Set shell</title>')
+  t.test('it serves the set page shell from the folder SETBRAINZ_PUBLIC_DIR names', async (t) => {
     const dir = makeEmptyDataDir(t)
+    const publicDir = makeTempPublicDir(t)
+    writeFileSync(join(publicDir, 'set.html'), '<!doctype html><title>Set shell</title>')
+    process.env.SETBRAINZ_PUBLIC_DIR = publicDir
+    t.teardown(() => {
+      delete process.env.SETBRAINZ_PUBLIC_DIR
+    })
     const base = await startServer(t, dir)
 
     const res = await fetch(`${base}/sets/TESTVIDEO39`)

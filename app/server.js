@@ -5,13 +5,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow } from './store.js'
 
 const require = createRequire(import.meta.url)
-const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public')
+const defaultPublicDir = join(dirname(fileURLToPath(import.meta.url)), 'public')
 const jqueryPath = require.resolve('jquery/dist/jquery.js')
 
-function sendShell(res, filename) {
-  res.sendFile(join(publicDir, filename), (err) => {
-    if (err && !res.headersSent) res.status(404).end()
-  })
+function publicDir() {
+  return process.env.SETBRAINZ_PUBLIC_DIR || defaultPublicDir
 }
 
 const STATUS_BY_CODE = {
@@ -25,6 +23,14 @@ const STATUS_BY_CODE = {
 
 export function createApp() {
   const app = express()
+  const dir = publicDir()
+
+  function sendShell(res, filename) {
+    res.sendFile(join(dir, filename), (err) => {
+      if (err && !res.headersSent) res.status(404).end()
+    })
+  }
+
   app.use(express.json())
 
   app.get('/', (req, res) => sendShell(res, 'index.html'))
@@ -55,7 +61,7 @@ export function createApp() {
     res.json(deleteRow(req.params.videoId, req.params.rowId))
   })
 
-  app.use(express.static(publicDir))
+  app.use(express.static(dir))
 
   app.use((err, req, res, next) => {
     const status = STATUS_BY_CODE[err.code] || err.status || err.statusCode || 500
