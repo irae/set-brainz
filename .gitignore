@@ -4,3 +4,4 @@ tools/
 __pycache__/
 node_modules/
 .tap/
+.playwright-cli/

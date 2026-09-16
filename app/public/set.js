@@ -6,8 +6,10 @@ function videoIdFromPath() {
 }
 
 const VIDEO_ID = videoIdFromPath()
+const GRAB_LINK_HTML = '<a href="#" class="grab-link">grab</a>'
 
 function showMessage(text) {
+  $('.note').remove()
   $('#tracklist').before(`<p class="note">${escapeHtml(text)}</p>`)
 }
 
@@ -77,13 +79,34 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
-function buildEmptyRow(row) {
-  const jumpHtml = row.start !== null ? jumpLink(row.start.seconds, 'big') : '<span class="jump-link big">—</span>'
+function openDialogSpan(title, artists) {
+  const attrs = artists !== undefined
+    ? ` data-artists="${escapeHtml(artists)}" data-title="${escapeHtml(title)}"`
+    : ''
+  return `<span class="open-dialog"${attrs}>`
+}
+
+function rowActionsHtml() {
+  return '<span class="row-actions">'
+    + '<a href="#" class="action-merge-up">merge with above</a> '
+    + '<a href="#" class="action-merge-down">merge with below</a> '
+    + '<a href="#" class="action-insert-above">add empty above</a> '
+    + '<a href="#" class="action-insert-below">add empty below</a> '
+    + '<a href="#" class="action-delete">delete row</a>'
+    + '</span>'
+}
+
+function buildEmptyRow(row, index) {
+  const decided = row.start !== null
+  const jumpHtml = decided
+    ? jumpLink(row.start.seconds, 'big decided')
+    : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
   const titleHtml = row.track !== null ? escapeHtml(row.track.title || 'ID') : 'ID'
   const artistHtml = row.track !== null && row.track.artists ? `<div class="small">${escapeHtml(row.track.artists)}</div>` : ''
-  return `<tr class="row-gap${row.track ? ' decided' : ''}">
-<td class="jump">${jumpHtml}</td>
-<td>${decidedMark(row)}<b>${titleHtml}</b>${artistHtml}</td>
+  return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
+<td class="jump">${jumpHtml}${GRAB_LINK_HTML}</td>
+<td>${decidedMark(row)}<b>${openDialogSpan()}${titleHtml}</span></b>${artistHtml}
+${rowActionsHtml()}</td>
 <td class="alts"></td>
 <td class="small"></td></tr>`
 }
@@ -92,14 +115,19 @@ function buildGapRow(row, index) {
   const sources = row.merged
   const earliest = Math.min(...sources.map((m) => m.earliest))
   const latest = Math.max(...sources.map((m) => m.latest))
-  const big = index === 0 ? 0 : Math.max(0, earliest - 5)
+  const defaultBig = index === 0 ? 0 : Math.max(0, earliest - 5)
+  const decided = row.start !== null
+  const bigSeconds = decided ? row.start.seconds : defaultBig
+  const bigCss = decided ? 'big decided' : 'big'
+  const wasBigLink = decided ? ` ${jumpLink(defaultBig, 'was-big')}` : ''
   const span = Math.round(latest - earliest)
   const minutes = Math.floor(span / 60)
   const secs = span % 60
-  return `<tr class="row-gap${row.track ? ' decided' : ''}">
-<td class="jump">${jumpLink(big, 'big')}
-<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div></td>
-<td>${decidedMark(row)}<b>ID</b><div class="small">${minutes} min ${secs} s with no match</div></td>
+  return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
+<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
+<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
+<td>${decidedMark(row)}<b>${openDialogSpan()}ID</span></b><div class="small">${minutes} min ${secs} s with no match</div>
+${rowActionsHtml()}</td>
 <td class="alts"></td>
 <td class="small"></td></tr>`
 }
@@ -119,7 +147,11 @@ function buildTrackRow(row, index, lowConfidence) {
   const earliest = Math.min(...sources.map((m) => m.earliest))
   const latest = Math.max(...sources.map((m) => m.latest))
   const best = variantBestStart(primary)
-  const big = index === 0 ? 0 : Math.max(0, earliest - 5)
+  const defaultBig = index === 0 ? 0 : Math.max(0, earliest - 5)
+  const decided = row.start !== null
+  const bigSeconds = decided ? row.start.seconds : defaultBig
+  const bigCss = decided ? 'big decided' : 'big'
+  const wasBigLink = decided ? ` ${jumpLink(defaultBig, 'was-big')}` : ''
 
   const titleHtml = weak
     ? `ID <small>maybe ${escapeHtml(primary.title)}</small>`
@@ -127,19 +159,20 @@ function buildTrackRow(row, index, lowConfidence) {
   const confSuffix = conf !== null ? ` (${Math.round(conf)}%)` : ''
 
   const altsHtml = alts
-    .map((v) => `${escapeHtml(v.title)} <span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
+    .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span> <span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
     .join('<br>')
 
-  return `<tr class="${cls}${row.track ? ' decided' : ''}">
-<td class="jump">${jumpLink(big, 'big')}
-<div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}</div></td>
-<td>${decidedMark(row)}<b>${titleHtml}</b><div class="small">${escapeHtml(primary.artist)}${confSuffix}</div><div class="small ev">${variantEvidence(primary)}</div></td>
+  return `<tr class="${cls}${row.track ? ' decided' : ''}" data-row-id="${row.id}">
+<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
+<div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
+<td>${decidedMark(row)}<b>${openDialogSpan(primary.title, primary.artist)}${titleHtml}</span></b><div class="small">${escapeHtml(primary.artist)}${confSuffix}</div><div class="small ev">${variantEvidence(primary)}</div>
+${rowActionsHtml()}</td>
 <td class="alts">${altsHtml}</td>
 <td class="small">${variantLinks(primary)}</td></tr>`
 }
 
 function buildRowHtml(row, index, lowConfidence) {
-  if (!row.merged.length) return buildEmptyRow(row)
+  if (!row.merged.length) return buildEmptyRow(row, index)
   const hasTrack = row.merged.some((m) => m.kind === 'track')
   return hasTrack ? buildTrackRow(row, index, lowConfidence) : buildGapRow(row, index)
 }
@@ -148,18 +181,164 @@ window.onYouTubeIframeAPIReady = function onYouTubeIframeAPIReady() {
   player = new YT.Player('yt', { videoId: VIDEO_ID, width: 640, height: 360 })
 }
 
+function apiUrl(rowId, suffix) {
+  return `/api/sets/${encodeURIComponent(VIDEO_ID)}/rows/${encodeURIComponent(rowId)}${suffix || ''}`
+}
+
+function loadAndRender() {
+  $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
+    .done((data) => {
+      $('.note').remove()
+      const $tbody = $('#tracklist tbody')
+      $tbody.empty()
+      data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
+    })
+    .fail(() => {
+      showMessage('Could not load this set. Check the server, then reload the page.')
+    })
+}
+
+function saveStart(rowId, seconds, from) {
+  $.ajax({
+    url: apiUrl(rowId),
+    method: 'PATCH',
+    contentType: 'application/json',
+    data: JSON.stringify({ start: { seconds, from } }),
+  }).done(loadAndRender).fail(() => showMessage('Could not save the start. Check the server, then reload the page.'))
+}
+
+function mergeRowApi(rowId, direction) {
+  $.ajax({
+    url: apiUrl(rowId, '/merge'),
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ direction }),
+  }).done(loadAndRender).fail(() => showMessage('Could not merge that row.'))
+}
+
+function insertRowApi(rowId, position) {
+  $.ajax({
+    url: apiUrl(rowId, '/insert'),
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ position }),
+  }).done(loadAndRender).fail(() => showMessage('Could not add that row.'))
+}
+
+function deleteRowApi(rowId) {
+  $.ajax({ url: apiUrl(rowId), method: 'DELETE' })
+    .done(loadAndRender).fail(() => showMessage('Could not delete that row.'))
+}
+
+function rowIdOf($el) {
+  return $el.closest('tr').data('row-id')
+}
+
+$(document).on('keydown', (e) => {
+  if (e.key === 'Shift') $('body').addClass('shift-down')
+})
+$(document).on('keyup', (e) => {
+  if (e.key === 'Shift') $('body').removeClass('shift-down')
+})
+$(window).on('blur', () => {
+  $('body').removeClass('shift-down')
+})
+
 $(document).on('click', 'a.jump-link', function (e) {
   e.preventDefault()
+  const $el = $(this)
+  const seconds = Number($el.data('t'))
+  if (e.shiftKey) {
+    const from = ['earliest', 'best', 'latest'].find((cls) => $el.hasClass(cls))
+    if (from) {
+      saveStart(rowIdOf($el), seconds, from)
+      return
+    }
+  }
   if (!player || typeof player.seekTo !== 'function') return
-  player.seekTo(Number($(this).data('t')), true)
+  player.seekTo(seconds, true)
   player.playVideo()
 })
 
-$.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
-  .done((data) => {
-    const $tbody = $('#tracklist tbody')
-    data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
-  })
-  .fail(() => {
-    showMessage('Could not load this set. Check the server, then reload the page.')
-  })
+$(document).on('click', 'a.grab-link', function (e) {
+  e.preventDefault()
+  if (!player || typeof player.getPlayerState !== 'function') {
+    showMessage('The player is not ready.')
+    return
+  }
+  if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
+    showMessage('Pause the player, then grab its time.')
+    return
+  }
+  saveStart(rowIdOf($(this)), player.getCurrentTime(), 'grab')
+})
+
+$(document).on('click', '.action-merge-up', function (e) {
+  e.preventDefault()
+  mergeRowApi(rowIdOf($(this)), 'up')
+})
+$(document).on('click', '.action-merge-down', function (e) {
+  e.preventDefault()
+  mergeRowApi(rowIdOf($(this)), 'down')
+})
+$(document).on('click', '.action-insert-above', function (e) {
+  e.preventDefault()
+  insertRowApi(rowIdOf($(this)), 'above')
+})
+$(document).on('click', '.action-insert-below', function (e) {
+  e.preventDefault()
+  insertRowApi(rowIdOf($(this)), 'below')
+})
+$(document).on('click', '.action-delete', function (e) {
+  e.preventDefault()
+  deleteRowApi(rowIdOf($(this)))
+})
+
+function openDialog(rowId, title, artists) {
+  const dialogEl = document.getElementById('track-dialog')
+  dialogEl.returnValue = ''
+  dialogEl.dataset.rowId = rowId
+  const $dialog = $(dialogEl)
+  $dialog.find('[name=artists]').val(artists || '')
+  $dialog.find('[name=title]').val(title || '')
+  $dialog.find('[name=version]').val('')
+  $dialog.find('[name=label]').val('')
+  $dialog.find('[name=isId]').prop('checked', false)
+  $dialog.find('[name=isIdVersion]').val('')
+  $dialog.find('[name=stackedWithPrevious]').prop('checked', false)
+  $dialog.find('[name=note]').val('')
+  dialogEl.showModal()
+}
+
+$(document).on('click', '.open-dialog', function () {
+  const $el = $(this)
+  openDialog(rowIdOf($el), $el.data('title'), $el.data('artists'))
+})
+
+document.getElementById('track-cancel').addEventListener('click', () => {
+  document.getElementById('track-dialog').close('cancel')
+})
+
+document.getElementById('track-dialog').addEventListener('close', function () {
+  if (this.returnValue !== 'save') return
+  const rowId = this.dataset.rowId
+  const $dialog = $(this)
+  const track = {
+    artists: $dialog.find('[name=artists]').val().trim(),
+    title: $dialog.find('[name=title]').val().trim(),
+    version: $dialog.find('[name=version]').val().trim(),
+    label: $dialog.find('[name=label]').val().trim(),
+    isId: $dialog.find('[name=isId]').prop('checked'),
+    isIdVersion: $dialog.find('[name=isIdVersion]').val().trim(),
+    stackedWithPrevious: $dialog.find('[name=stackedWithPrevious]').prop('checked'),
+  }
+  const note = $dialog.find('[name=note]').val().trim()
+  $.ajax({
+    url: apiUrl(rowId),
+    method: 'PATCH',
+    contentType: 'application/json',
+    data: JSON.stringify({ track, note }),
+  }).done(loadAndRender).fail(() => showMessage('Could not save the track. Check the server, then reload the page.'))
+})
+
+loadAndRender()

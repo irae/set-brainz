@@ -96,3 +96,71 @@ a.jump-link.latest { color: #999; }
 tr.decided {
   box-shadow: inset 4px 0 0 #6d6;
 }
+
+.jump-link.big.decided {
+  color: #6d6;
+}
+
+a.jump-link.was-big {
+  color: #999;
+}
+
+.grab-link, .row-actions {
+  display: none;
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+body.shift-down tr:hover .grab-link,
+body.shift-down tr:hover .row-actions {
+  display: inline;
+}
+
+.row-actions a {
+  margin-right: 6px;
+}
+
+.open-dialog {
+  cursor: pointer;
+}
+
+.open-dialog:hover {
+  text-decoration: underline;
+}
+
+dialog#track-dialog {
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 4px;
+  min-width: 320px;
+}
+
+dialog#track-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+dialog#track-dialog label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+dialog#track-dialog input[type="text"],
+dialog#track-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #111;
+  color: #ddd;
+  border: 1px solid #444;
+  padding: 4px;
+  font: inherit;
+}
+
+dialog#track-dialog menu {
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

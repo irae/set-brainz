@@ -11,6 +11,22 @@
 <thead><tr><th>Jump</th><th>Track</th><th>Alternatives</th><th>Search</th></tr></thead>
 <tbody></tbody>
 </table>
+<dialog id="track-dialog">
+<form method="dialog" id="track-form">
+<label>Artists <input type="text" name="artists"></label>
+<label>Title <input type="text" name="title"></label>
+<label>Version <input type="text" name="version"></label>
+<label>Label <input type="text" name="label"></label>
+<label><input type="checkbox" name="isId"> Is ID</label>
+<label>ID version <input type="text" name="isIdVersion"></label>
+<label><input type="checkbox" name="stackedWithPrevious"> Stacked with previous</label>
+<label>Note <textarea name="note"></textarea></label>
+<menu>
+<button type="button" id="track-cancel">Cancel</button>
+<button type="submit" value="save">Save</button>
+</menu>
+</form>
+</dialog>
 <script src="/vendor/jquery.js"></script>
 <script src="/set.js"></script>
 <script src="https://www.youtube.com/iframe_api"></script>
