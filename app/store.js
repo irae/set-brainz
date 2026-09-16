@@ -33,6 +33,10 @@ function readMergedFile(videoId, filename) {
   return JSON.parse(readFileSync(join(mergedDirFor(videoId), filename), 'utf8'))
 }
 
+function readDecisionsFile(videoId) {
+  return JSON.parse(readFileSync(decisionsPath(videoId), 'utf8'))
+}
+
 function writeDecisionsFile(videoId, doc) {
   const target = decisionsPath(videoId)
   mkdirSync(join(dataDir(), 'decisions'), { recursive: true })
@@ -67,10 +71,16 @@ function bootstrapDecisions(videoId) {
 
 function loadDecisions(videoId) {
   if (cache.has(videoId)) return cache.get(videoId)
-  const doc = existsSync(decisionsPath(videoId))
-    ? JSON.parse(readFileSync(decisionsPath(videoId), 'utf8'))
-    : bootstrapDecisions(videoId)
+  const doc = existsSync(decisionsPath(videoId)) ? readDecisionsFile(videoId) : bootstrapDecisions(videoId)
   if (doc) cache.set(videoId, doc)
+  return doc
+}
+
+function peekDecisions(videoId) {
+  if (cache.has(videoId)) return cache.get(videoId)
+  if (!existsSync(decisionsPath(videoId))) return null
+  const doc = readDecisionsFile(videoId)
+  cache.set(videoId, doc)
   return doc
 }
 
@@ -88,17 +98,27 @@ export function listSets() {
         .map((entry) => entry.name)
     : []
   for (const videoId of videoIds) {
-    const doc = loadDecisions(videoId)
-    if (!doc) continue
-    const entry = {
-      videoId,
-      rowCount: doc.rows.length,
-      decidedCount: doc.rows.filter(isDecided).length,
-      mergedFile: doc.mergedFile,
-      hasNewerMerge: newestMergedFilename(videoId) !== doc.mergedFile,
+    const doc = peekDecisions(videoId)
+    if (doc) {
+      withDecisions.push({
+        videoId,
+        rowCount: doc.rows.length,
+        decidedCount: doc.rows.filter(isDecided).length,
+        mergedFile: doc.mergedFile,
+        hasNewerMerge: newestMergedFilename(videoId) !== doc.mergedFile,
+      })
+      continue
     }
-    if (entry.decidedCount > 0) withDecisions.push(entry)
-    else mergedOnly.push(entry)
+    const filename = newestMergedFilename(videoId)
+    if (!filename) continue
+    const merged = readMergedFile(videoId, filename)
+    mergedOnly.push({
+      videoId,
+      rowCount: merged.rows.length,
+      decidedCount: 0,
+      mergedFile: filename,
+      hasNewerMerge: false,
+    })
   }
   return { withDecisions, mergedOnly }
 }

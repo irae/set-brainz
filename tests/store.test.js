@@ -1,5 +1,5 @@
 import { test } from 'tap'
-import { readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile, writeDecisionsFile } from './helpers/fixtures.js'
 import { listSets, getSet } from '../app/store.js'
@@ -171,9 +171,30 @@ test('store listSets (functional)', (t) => {
 
     const result = listSets()
 
-    const entry = result.mergedOnly.find((e) => e.videoId === videoId)
+    const entry = result.withDecisions.find((e) => e.videoId === videoId)
     t.ok(entry, 'video is listed')
     t.equal(entry.hasNewerMerge, true)
+    t.end()
+  })
+
+  t.test('it writes no decisions file for the index, and a video without one stays merged-only across two calls', (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO12'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json')
+
+    const first = listSets()
+    const second = listSets()
+
+    t.notOk(existsSync(join(dir, 'decisions', `${videoId}.json`)), 'no decisions file written')
+    t.ok(
+      first.mergedOnly.some((e) => e.videoId === videoId),
+      'merged-only after the first call',
+    )
+    t.ok(
+      second.mergedOnly.some((e) => e.videoId === videoId),
+      'still merged-only after the second call',
+    )
     t.end()
   })
 
