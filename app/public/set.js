@@ -1,5 +1,3 @@
-const LOW_CONFIDENCE = 75
-
 let player = null
 
 function videoIdFromPath() {
@@ -8,6 +6,10 @@ function videoIdFromPath() {
 }
 
 const VIDEO_ID = videoIdFromPath()
+
+function showMessage(text) {
+  $('#tracklist').before(`<p class="note">${escapeHtml(text)}</p>`)
+}
 
 function hms(seconds) {
   const s = Math.max(0, Math.round(seconds))
@@ -75,14 +77,6 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
-function buildMissingRow() {
-  return `<tr class="row-gap">
-<td class="jump">${jumpLink(0, 'big')}</td>
-<td><b>(no merged data)</b></td>
-<td class="alts"></td>
-<td class="small"></td></tr>`
-}
-
 function buildGapRow(row, index) {
   const sources = row.merged
   const earliest = Math.min(...sources.map((m) => m.earliest))
@@ -99,7 +93,7 @@ function buildGapRow(row, index) {
 <td class="small"></td></tr>`
 }
 
-function buildTrackRow(row, index) {
+function buildTrackRow(row, index, lowConfidence) {
   const sources = row.merged.filter((m) => m.kind === 'track')
   const scored = sources
     .flatMap((m) => m.variants)
@@ -108,7 +102,7 @@ function buildTrackRow(row, index) {
   const primary = scored[0].v
   const alts = scored.slice(1).map((s) => s.v)
   const { r, t, conf } = variantStats(primary)
-  const weak = (conf !== null && conf < LOW_CONFIDENCE) || (r === 0 && t === 1)
+  const weak = (conf !== null && conf < lowConfidence) || (r === 0 && t === 1)
   const cls = weak ? 'row-weak' : (r && t ? 'row-both' : 'row-one')
 
   const earliest = Math.min(...sources.map((m) => m.earliest))
@@ -133,13 +127,13 @@ function buildTrackRow(row, index) {
 <td class="small">${variantLinks(primary)}</td></tr>`
 }
 
-function buildRowHtml(row, index) {
-  if (!row.merged.length) return buildMissingRow()
+function buildRowHtml(row, index, lowConfidence) {
   const hasTrack = row.merged.some((m) => m.kind === 'track')
-  return hasTrack ? buildTrackRow(row, index) : buildGapRow(row, index)
+  return hasTrack ? buildTrackRow(row, index, lowConfidence) : buildGapRow(row, index)
 }
 
 window.onYouTubeIframeAPIReady = function onYouTubeIframeAPIReady() {
+  if (!VIDEO_ID) return
   player = new YT.Player('yt', { videoId: VIDEO_ID, width: 640, height: 360 })
 }
 
@@ -150,7 +144,15 @@ $(document).on('click', 'a.jump-link', function (e) {
   player.playVideo()
 })
 
-$.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`, (data) => {
-  const $tbody = $('#tracklist tbody')
-  data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index)))
-})
+if (!VIDEO_ID) {
+  showMessage('No video ID in the address. Open a set from the index page.')
+} else {
+  $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
+    .done((data) => {
+      const $tbody = $('#tracklist tbody')
+      data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
+    })
+    .fail(() => {
+      showMessage('Could not load this set. Check the server, then reload the page.')
+    })
+}

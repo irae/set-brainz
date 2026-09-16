@@ -14,9 +14,13 @@ function rowHtml(entry) {
 </tr>`
 }
 
-$.getJSON('/api/sets', (data) => {
-  const $withDecisions = $('#with-decisions tbody')
-  const $mergedOnly = $('#merged-only tbody')
-  data.withDecisions.forEach((entry) => $withDecisions.append(rowHtml(entry)))
-  data.mergedOnly.forEach((entry) => $mergedOnly.append(rowHtml(entry)))
-})
+$.getJSON('/api/sets')
+  .done((data) => {
+    const $withDecisions = $('#with-decisions tbody')
+    const $mergedOnly = $('#merged-only tbody')
+    data.withDecisions.forEach((entry) => $withDecisions.append(rowHtml(entry)))
+    data.mergedOnly.forEach((entry) => $mergedOnly.append(rowHtml(entry)))
+  })
+  .fail(() => {
+    $('h1').after(`<p class="note">Could not load the set list. Check the server, then reload the page.</p>`)
+  })

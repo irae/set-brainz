@@ -168,7 +168,7 @@ export function getSet(videoId) {
     ...row,
     merged: row.sources.map((uuid) => mergedByUuid.get(uuid)).filter(Boolean),
   }))
-  return { videoId, mergedFile: doc.mergedFile, set: doc.set, rows }
+  return { videoId, mergedFile: doc.mergedFile, params: merged.params, set: doc.set, rows }
 }
 
 export function updateRow(videoId, rowId, patch) {
