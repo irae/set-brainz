@@ -77,6 +77,17 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
+function buildEmptyRow(row) {
+  const jumpHtml = row.start !== null ? jumpLink(row.start.seconds, 'big') : '<span class="jump-link big">—</span>'
+  const titleHtml = row.track !== null ? escapeHtml(row.track.title || 'ID') : 'ID'
+  const artistHtml = row.track !== null && row.track.artists ? `<div class="small">${escapeHtml(row.track.artists)}</div>` : ''
+  return `<tr class="row-gap${row.track ? ' decided' : ''}">
+<td class="jump">${jumpHtml}</td>
+<td>${decidedMark(row)}<b>${titleHtml}</b>${artistHtml}</td>
+<td class="alts"></td>
+<td class="small"></td></tr>`
+}
+
 function buildGapRow(row, index) {
   const sources = row.merged
   const earliest = Math.min(...sources.map((m) => m.earliest))
@@ -128,6 +139,7 @@ function buildTrackRow(row, index, lowConfidence) {
 }
 
 function buildRowHtml(row, index, lowConfidence) {
+  if (!row.merged.length) return buildEmptyRow(row)
   const hasTrack = row.merged.some((m) => m.kind === 'track')
   return hasTrack ? buildTrackRow(row, index, lowConfidence) : buildGapRow(row, index)
 }
