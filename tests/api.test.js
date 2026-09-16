@@ -23,10 +23,12 @@ function withShellFile(t, name, content) {
   const existedBefore = existsSync(path)
   const original = existedBefore ? readFileSync(path, 'utf8') : null
   writeFileSync(path, content)
-  t.teardown(() => {
+  const restore = () => {
     if (existedBefore) writeFileSync(path, original)
     else rmSync(path, { force: true })
-  })
+  }
+  process.on('exit', restore)
+  t.teardown(restore)
 }
 
 test('api sets (functional)', (t) => {
@@ -227,6 +229,92 @@ test('api row changes (functional)', (t) => {
 
     t.equal(patchRes.status, 404)
     t.equal(deleteRes.status, 404)
+    t.end()
+  })
+
+  t.test('it answers 400 for a merge at the first or last row', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO42'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow()] })
+    const base = await startServer(t, dir)
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const firstRowId = before.rows[0].id
+    const lastRowId = before.rows[1].id
+
+    const upRes = await fetch(`${base}/api/sets/${videoId}/rows/${firstRowId}/merge`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ direction: 'up' }),
+    })
+    const downRes = await fetch(`${base}/api/sets/${videoId}/rows/${lastRowId}/merge`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ direction: 'down' }),
+    })
+
+    t.equal(upRes.status, 400)
+    t.equal(downRes.status, 400)
+    t.end()
+  })
+
+  t.test('it answers 400 for a bad start.from value', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO43'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const base = await startServer(t, dir)
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ start: { seconds: 10, from: 'sideways' } }),
+    })
+
+    t.equal(res.status, 400)
+    t.end()
+  })
+
+  t.end()
+})
+
+test('api error handling (functional)', (t) => {
+  t.test('it answers 500 with a short message and no stack when a merged file is damaged', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO44'
+    const mergedDir = join(dir, 'merged', videoId)
+    mkdirSync(mergedDir, { recursive: true })
+    writeFileSync(join(mergedDir, '20260101T000000Z-x.json'), '{not valid json')
+    const base = await startServer(t, dir)
+
+    const res = await fetch(`${base}/api/sets/${videoId}`)
+    const body = await res.json()
+
+    t.equal(res.status, 500)
+    t.equal(typeof body.error, 'string')
+    t.notOk('stack' in body)
+    t.notMatch(body.error, /\.js:\d+:\d+/)
+    t.end()
+  })
+
+  t.test('it answers 400 with a short message and no stack for a malformed JSON body', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO45'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const base = await startServer(t, dir)
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: '{not valid json',
+    })
+    const body = await res.json()
+
+    t.equal(res.status, 400)
+    t.equal(typeof body.error, 'string')
+    t.notOk('stack' in body)
     t.end()
   })
 

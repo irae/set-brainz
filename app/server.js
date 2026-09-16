@@ -14,9 +14,13 @@ function sendShell(res, filename) {
   })
 }
 
-function sendStoreError(res, err) {
-  const isNotFound = err.message.startsWith('no merged results for video id') || err.message.startsWith('no row ')
-  res.status(isNotFound ? 404 : 400).json({ error: err.message })
+const STATUS_BY_CODE = {
+  unknown_video: 404,
+  unknown_row: 404,
+  invalid_direction: 400,
+  invalid_position: 400,
+  invalid_start_from: 400,
+  merge_at_boundary: 400,
 }
 
 export function createApp() {
@@ -32,46 +36,31 @@ export function createApp() {
   })
 
   app.get('/api/sets/:videoId', (req, res) => {
-    try {
-      res.json(getSet(req.params.videoId))
-    } catch (err) {
-      sendStoreError(res, err)
-    }
+    res.json(getSet(req.params.videoId))
   })
 
   app.patch('/api/sets/:videoId/rows/:rowId', (req, res) => {
-    try {
-      res.json(updateRow(req.params.videoId, req.params.rowId, req.body))
-    } catch (err) {
-      sendStoreError(res, err)
-    }
+    res.json(updateRow(req.params.videoId, req.params.rowId, req.body))
   })
 
   app.post('/api/sets/:videoId/rows/:rowId/merge', (req, res) => {
-    try {
-      res.json(mergeRow(req.params.videoId, req.params.rowId, req.body.direction))
-    } catch (err) {
-      sendStoreError(res, err)
-    }
+    res.json(mergeRow(req.params.videoId, req.params.rowId, req.body.direction))
   })
 
   app.post('/api/sets/:videoId/rows/:rowId/insert', (req, res) => {
-    try {
-      res.json(insertEmptyRow(req.params.videoId, req.params.rowId, req.body.position))
-    } catch (err) {
-      sendStoreError(res, err)
-    }
+    res.json(insertEmptyRow(req.params.videoId, req.params.rowId, req.body.position))
   })
 
   app.delete('/api/sets/:videoId/rows/:rowId', (req, res) => {
-    try {
-      res.json(deleteRow(req.params.videoId, req.params.rowId))
-    } catch (err) {
-      sendStoreError(res, err)
-    }
+    res.json(deleteRow(req.params.videoId, req.params.rowId))
   })
 
   app.use(express.static(publicDir))
+
+  app.use((err, req, res, next) => {
+    const status = STATUS_BY_CODE[err.code] || err.status || err.statusCode || 500
+    res.status(status).json({ error: status === 500 ? 'internal error' : err.message })
+  })
 
   return app
 }

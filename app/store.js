@@ -4,6 +4,12 @@ import { randomUUID } from 'node:crypto'
 
 const cache = new Map()
 
+const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab']
+
+function storeError(code, message) {
+  return Object.assign(new Error(message), { code })
+}
+
 function dataDir() {
   return process.env.SETBRAINZ_DATA_DIR || 'data'
 }
@@ -94,7 +100,7 @@ function isDecided(row) {
 
 function findRowIndex(doc, rowId) {
   const index = doc.rows.findIndex((row) => row.id === rowId)
-  if (index === -1) throw new Error(`no row ${rowId} for video id ${doc.videoId}`)
+  if (index === -1) throw storeError('unknown_row', `no row ${rowId} for video id ${doc.videoId}`)
   return index
 }
 
@@ -106,7 +112,7 @@ function copyToPrevFile(videoId) {
 function applyChange(videoId, mutate) {
   const doc = loadDecisions(videoId)
   if (!doc) {
-    throw new Error(`no merged results for video id ${videoId}`)
+    throw storeError('unknown_video', `no merged results for video id ${videoId}`)
   }
   const now = new Date().toISOString()
   mutate(doc, now)
@@ -154,7 +160,7 @@ export function listSets() {
 export function getSet(videoId) {
   const doc = loadDecisions(videoId)
   if (!doc) {
-    throw new Error(`no merged results for video id ${videoId}`)
+    throw storeError('unknown_video', `no merged results for video id ${videoId}`)
   }
   const merged = readMergedFile(videoId, doc.mergedFile)
   const mergedByUuid = new Map(merged.rows.map((row) => [row.uuid, row]))
@@ -168,7 +174,12 @@ export function getSet(videoId) {
 export function updateRow(videoId, rowId, patch) {
   return applyChange(videoId, (doc, now) => {
     const row = doc.rows[findRowIndex(doc, rowId)]
-    if ('start' in patch) row.start = patch.start
+    if ('start' in patch) {
+      if (patch.start !== null && !VALID_START_FROM.includes(patch.start.from)) {
+        throw storeError('invalid_start_from', `unknown start from ${patch.start && patch.start.from}`)
+      }
+      row.start = patch.start
+    }
     if ('track' in patch) row.track = patch.track
     if ('note' in patch) row.note = patch.note
     row.updatedAt = now
@@ -179,21 +190,21 @@ export function mergeRow(videoId, rowId, direction) {
   return applyChange(videoId, (doc, now) => {
     const index = findRowIndex(doc, rowId)
     if (direction === 'up') {
-      if (index === 0) throw new Error('cannot merge the first row up')
+      if (index === 0) throw storeError('merge_at_boundary', 'cannot merge the first row up')
       const target = doc.rows[index - 1]
       const source = doc.rows[index]
       target.sources = [...target.sources, ...source.sources]
       target.updatedAt = now
       doc.rows.splice(index, 1)
     } else if (direction === 'down') {
-      if (index === doc.rows.length - 1) throw new Error('cannot merge the last row down')
+      if (index === doc.rows.length - 1) throw storeError('merge_at_boundary', 'cannot merge the last row down')
       const target = doc.rows[index]
       const source = doc.rows[index + 1]
       target.sources = [...target.sources, ...source.sources]
       target.updatedAt = now
       doc.rows.splice(index + 1, 1)
     } else {
-      throw new Error(`unknown merge direction ${direction}`)
+      throw storeError('invalid_direction', `unknown merge direction ${direction}`)
     }
   })
 }
@@ -202,7 +213,7 @@ export function insertEmptyRow(videoId, rowId, position) {
   return applyChange(videoId, (doc, now) => {
     const index = findRowIndex(doc, rowId)
     if (position !== 'above' && position !== 'below') {
-      throw new Error(`unknown insert position ${position}`)
+      throw storeError('invalid_position', `unknown insert position ${position}`)
     }
     const newRow = { id: randomUUID(), sources: [], start: null, track: null, note: '', updatedAt: now }
     const insertAt = position === 'above' ? index : index + 1
