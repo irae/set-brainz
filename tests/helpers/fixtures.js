@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 const VIDEO_ID = 'TESTVIDEO01'
 const SEG = 12
@@ -89,4 +90,55 @@ export function makeDataDir(t, { order = 'plain' } = {}) {
   writeFileSync(join(runsDir, 'ripthatset', 'run.log'), ripThatSetLog(order))
   t.teardown(() => rmSync(dir, { recursive: true, force: true }))
   return { dir, videoId: VIDEO_ID }
+}
+
+export function makeEmptyDataDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'set-brainz-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  return dir
+}
+
+export function makeMergedRow(overrides = {}) {
+  const base = {
+    uuid: randomUUID(),
+    sha: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+    kind: 'track',
+    earliest: 0,
+    best: 0,
+    latest: 10,
+    variants: [
+      {
+        title: 'Fixture Title',
+        artist: 'Fixture Artist',
+        start: 0,
+        end: 10,
+        tracklistify: [],
+        ripthatset: [],
+      },
+    ],
+  }
+  return { ...base, ...overrides }
+}
+
+export function writeMergedFile(dir, videoId, filename, { rows = [makeMergedRow()], ...overrides } = {}) {
+  const mergedDir = join(dir, 'merged', videoId)
+  mkdirSync(mergedDir, { recursive: true })
+  const doc = {
+    videoId,
+    createdAt: '2026-01-01T00:00:00Z',
+    durationSeconds: 3600,
+    inputs: {},
+    params: {},
+    rows,
+    ...overrides,
+  }
+  writeFileSync(join(mergedDir, filename), JSON.stringify(doc, null, 2) + '\n')
+  return doc
+}
+
+export function writeDecisionsFile(dir, videoId, doc) {
+  const decisionsDir = join(dir, 'decisions')
+  mkdirSync(decisionsDir, { recursive: true })
+  writeFileSync(join(decisionsDir, `${videoId}.json`), JSON.stringify(doc, null, 2) + '\n')
+  return doc
 }
