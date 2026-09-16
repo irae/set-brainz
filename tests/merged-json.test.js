@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { makeDataDir } from './helpers/fixtures.js'
+import { makeDataDir, waitForNextSecond } from './helpers/fixtures.js'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/merge-results.py', import.meta.url))
 
@@ -33,9 +33,10 @@ test('merge script writes a file named <timestamp>-<video-id>.json under merged/
   t.end()
 })
 
-test('merge script gives the same row uuid for the same row content in two runs', (t) => {
+test('merge script gives the same row uuid for the same row content in two runs', async (t) => {
   const { dir, videoId } = makeDataDir(t)
   runMerge(dir, videoId)
+  await waitForNextSecond()
   runMerge(dir, videoId, ['--force'])
   const files = mergedFiles(dir, videoId)
   t.equal(files.length, 2)
@@ -96,9 +97,10 @@ test('merge script writes nothing and warns when the newest file has the same ro
   t.end()
 })
 
-test('merge script writes a second file when --force is given', (t) => {
+test('merge script writes a second file when --force is given', async (t) => {
   const { dir, videoId } = makeDataDir(t)
   runMerge(dir, videoId)
+  await waitForNextSecond()
   runMerge(dir, videoId, ['--force'])
   const files = mergedFiles(dir, videoId)
   t.equal(files.length, 2)

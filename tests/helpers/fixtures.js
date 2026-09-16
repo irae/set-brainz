@@ -69,6 +69,17 @@ function tracklistifyJson() {
   )
 }
 
+export function waitForNextSecond() {
+  const startSecond = Math.floor(Date.now() / 1000)
+  return new Promise((resolve) => {
+    const check = () => {
+      if (Math.floor(Date.now() / 1000) > startSecond) resolve()
+      else setTimeout(check, 20)
+    }
+    check()
+  })
+}
+
 export function makeDataDir(t, { order = 'plain' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'set-brainz-'))
   const runsDir = join(dir, 'runs', VIDEO_ID)
