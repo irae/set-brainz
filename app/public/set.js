@@ -197,6 +197,7 @@ function loadAndRender() {
   $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
     .done((data) => {
       $('.note').remove()
+      hoveredRow = null
       const $tbody = $('#tracklist tbody')
       $tbody.empty()
       data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
@@ -268,7 +269,7 @@ $(window).on('blur', () => {
   applyShiftHover()
 })
 
-$(document).on('mouseenter', 'tr', function (e) {
+$(document).on('mouseenter mousemove', 'tr', function (e) {
   hoveredRow = $(this)
   shiftHeld = e.shiftKey
   applyShiftHover()
