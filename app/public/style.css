@@ -112,7 +112,9 @@ a.jump-link.was-big {
 }
 
 body.shift-down tr:hover .grab-link,
-body.shift-down tr:hover .row-actions {
+body.shift-down tr:hover .row-actions,
+tr.shift-hover .grab-link,
+tr.shift-hover .row-actions {
   display: inline;
 }
 

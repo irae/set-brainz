@@ -108,10 +108,11 @@ function buildEmptyRow(row, index) {
   const jumpHtml = decided
     ? jumpLink(row.start.seconds, 'big decided')
     : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
+  const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
   const titleHtml = row.track !== null ? escapeHtml(row.track.title || 'ID') : 'ID'
   const artistHtml = row.track !== null && row.track.artists ? `<div class="small">${escapeHtml(row.track.artists)}</div>` : ''
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
-<td class="jump">${jumpHtml}${GRAB_LINK_HTML}</td>
+<td class="jump">${jumpHtml}${GRAB_LINK_HTML}${firstRowLink}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${artistHtml}
 ${rowActionsHtml()}</td>
 <td class="alts"></td>
@@ -126,13 +127,13 @@ function buildGapRow(row, index) {
   const decided = row.start !== null
   const bigSeconds = decided ? row.start.seconds : defaultBig
   const bigCss = decided ? 'big decided' : 'big'
-  const wasBigLink = decided ? ` ${jumpLink(defaultBig, 'was-big')}` : ''
+  const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
   const span = Math.round(latest - earliest)
   const minutes = Math.floor(span / 60)
   const secs = span % 60
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
-<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
-<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
+<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}${firstRowLink}
+<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div></td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}ID</span></b><div class="small">${minutes} min ${secs} s with no match</div>
 ${rowActionsHtml()}</td>
 <td class="alts"></td>
@@ -249,6 +250,13 @@ $(document).on('keyup', (e) => {
 })
 $(window).on('blur', () => {
   $('body').removeClass('shift-down')
+})
+
+$(document).on('mouseenter mousemove', 'tr', function (e) {
+  $(this).toggleClass('shift-hover', e.shiftKey)
+})
+$(document).on('mouseleave', 'tr', function () {
+  $(this).removeClass('shift-hover')
 })
 
 $(document).on('click', 'a.jump-link', function (e) {
