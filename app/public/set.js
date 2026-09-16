@@ -86,6 +86,13 @@ function openDialogSpan(title, artists) {
   return `<span class="open-dialog"${attrs}>`
 }
 
+function ownTitleSpan(row, title, artists) {
+  if (row.track) {
+    return `<span class="open-dialog" data-track="${escapeHtml(JSON.stringify(row.track))}" data-note="${escapeHtml(row.note || '')}">`
+  }
+  return openDialogSpan(title, artists)
+}
+
 function rowActionsHtml() {
   return '<span class="row-actions">'
     + '<a href="#" class="action-merge-up">merge with above</a> '
@@ -105,7 +112,7 @@ function buildEmptyRow(row, index) {
   const artistHtml = row.track !== null && row.track.artists ? `<div class="small">${escapeHtml(row.track.artists)}</div>` : ''
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpHtml}${GRAB_LINK_HTML}</td>
-<td>${decidedMark(row)}<b>${openDialogSpan()}${titleHtml}</span></b>${artistHtml}
+<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${artistHtml}
 ${rowActionsHtml()}</td>
 <td class="alts"></td>
 <td class="small"></td></tr>`
@@ -126,7 +133,7 @@ function buildGapRow(row, index) {
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 <div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
-<td>${decidedMark(row)}<b>${openDialogSpan()}ID</span></b><div class="small">${minutes} min ${secs} s with no match</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row)}ID</span></b><div class="small">${minutes} min ${secs} s with no match</div>
 ${rowActionsHtml()}</td>
 <td class="alts"></td>
 <td class="small"></td></tr>`
@@ -165,7 +172,7 @@ function buildTrackRow(row, index, lowConfidence) {
   return `<tr class="${cls}${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 <div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
-<td>${decidedMark(row)}<b>${openDialogSpan(primary.title, primary.artist)}${titleHtml}</span></b><div class="small">${escapeHtml(primary.artist)}${confSuffix}</div><div class="small ev">${variantEvidence(primary)}</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b><div class="small">${escapeHtml(primary.artist)}${confSuffix}</div><div class="small ev">${variantEvidence(primary)}</div>
 ${rowActionsHtml()}</td>
 <td class="alts">${altsHtml}</td>
 <td class="small">${variantLinks(primary)}</td></tr>`
@@ -294,25 +301,31 @@ $(document).on('click', '.action-delete', function (e) {
   deleteRowApi(rowIdOf($(this)))
 })
 
-function openDialog(rowId, title, artists) {
+function openDialog(rowId, fields) {
   const dialogEl = document.getElementById('track-dialog')
   dialogEl.returnValue = ''
   dialogEl.dataset.rowId = rowId
   const $dialog = $(dialogEl)
-  $dialog.find('[name=artists]').val(artists || '')
-  $dialog.find('[name=title]').val(title || '')
-  $dialog.find('[name=version]').val('')
-  $dialog.find('[name=label]').val('')
-  $dialog.find('[name=isId]').prop('checked', false)
-  $dialog.find('[name=isIdVersion]').val('')
-  $dialog.find('[name=stackedWithPrevious]').prop('checked', false)
-  $dialog.find('[name=note]').val('')
+  $dialog.find('[name=artists]').val(fields.artists || '')
+  $dialog.find('[name=title]').val(fields.title || '')
+  $dialog.find('[name=version]').val(fields.version || '')
+  $dialog.find('[name=label]').val(fields.label || '')
+  $dialog.find('[name=isId]').prop('checked', !!fields.isId)
+  $dialog.find('[name=isIdVersion]').prop('checked', !!fields.isIdVersion)
+  $dialog.find('[name=stackedWithPrevious]').prop('checked', !!fields.stackedWithPrevious)
+  $dialog.find('[name=note]').val(fields.note || '')
   dialogEl.showModal()
 }
 
 $(document).on('click', '.open-dialog', function () {
   const $el = $(this)
-  openDialog(rowIdOf($el), $el.data('title'), $el.data('artists'))
+  const rowId = rowIdOf($el)
+  const track = $el.data('track')
+  if (track) {
+    openDialog(rowId, { ...track, note: $el.data('note') })
+  } else {
+    openDialog(rowId, { artists: $el.data('artists'), title: $el.data('title') })
+  }
 })
 
 document.getElementById('track-cancel').addEventListener('click', () => {
@@ -329,7 +342,7 @@ document.getElementById('track-dialog').addEventListener('close', function () {
     version: $dialog.find('[name=version]').val().trim(),
     label: $dialog.find('[name=label]').val().trim(),
     isId: $dialog.find('[name=isId]').prop('checked'),
-    isIdVersion: $dialog.find('[name=isIdVersion]').val().trim(),
+    isIdVersion: $dialog.find('[name=isIdVersion]').prop('checked'),
     stackedWithPrevious: $dialog.find('[name=stackedWithPrevious]').prop('checked'),
   }
   const note = $dialog.find('[name=note]').val().trim()
