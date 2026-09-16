@@ -1,8 +1,9 @@
 import { test } from 'tap'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile, writeDecisionsFile } from './helpers/fixtures.js'
-import { listSets, getSet } from '../app/store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow } from '../app/store.js'
 
 function useDataDir(dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
@@ -240,6 +241,214 @@ test('store getSet (functional)', (t) => {
     useDataDir(dir)
 
     t.throws(() => getSet('TESTVIDEONONE'), /TESTVIDEONONE/)
+    t.end()
+  })
+
+  t.end()
+})
+
+test('store changes (functional)', (t) => {
+  t.test('it saves a decided start and returns it on the next read', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO13'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    await updateRow(videoId, rowId, { start: { seconds: 42, from: 'best' } })
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].start, { seconds: 42, from: 'best' })
+    t.end()
+  })
+
+  t.test('it saves track fields and keeps the fields it did not get', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO14'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+    await updateRow(videoId, rowId, { start: { seconds: 10, from: 'best' } })
+
+    await updateRow(videoId, rowId, { track: { artists: 'Fixture Artist', title: 'Fixture Title' } })
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].track, { artists: 'Fixture Artist', title: 'Fixture Title' })
+    t.same(after.rows[0].start, { seconds: 10, from: 'best' })
+    t.end()
+  })
+
+  t.test('it saves a note without touching the track fields', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO15'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+    await updateRow(videoId, rowId, { track: { artists: 'Fixture Artist', title: 'Fixture Title' } })
+
+    await updateRow(videoId, rowId, { note: 'check this drop' })
+    const after = getSet(videoId)
+
+    t.equal(after.rows[0].note, 'check this drop')
+    t.same(after.rows[0].track, { artists: 'Fixture Artist', title: 'Fixture Title' })
+    t.end()
+  })
+
+  t.test('it merges a row with the row above and keeps both sources', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO16'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    const rowC = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB, rowC] })
+    const before = getSet(videoId)
+
+    await mergeRow(videoId, before.rows[1].id, 'up')
+    const after = getSet(videoId)
+
+    t.equal(after.rows.length, 2)
+    t.same(after.rows[0].sources, [rowA.uuid, rowB.uuid])
+    t.same(after.rows[1].sources, [rowC.uuid])
+    t.end()
+  })
+
+  t.test('it merges a row with the row below and keeps both sources', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO17'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    const rowC = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB, rowC] })
+    const before = getSet(videoId)
+
+    await mergeRow(videoId, before.rows[1].id, 'down')
+    const after = getSet(videoId)
+
+    t.equal(after.rows.length, 2)
+    t.same(after.rows[0].sources, [rowA.uuid])
+    t.same(after.rows[1].sources, [rowB.uuid, rowC.uuid])
+    t.end()
+  })
+
+  t.test('it refuses a merge up on the first row and a merge down on the last row', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO18'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+
+    await t.rejects(mergeRow(videoId, before.rows[0].id, 'up'))
+    await t.rejects(mergeRow(videoId, before.rows[1].id, 'down'))
+    t.end()
+  })
+
+  t.test('it inserts an empty row above and below, with no sources', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO19'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    const [decisionA, decisionB] = before.rows
+
+    await insertEmptyRow(videoId, decisionA.id, 'above')
+    await insertEmptyRow(videoId, decisionB.id, 'below')
+    const after = getSet(videoId)
+
+    t.equal(after.rows.length, 4)
+    t.same(
+      after.rows.map((row) => row.sources),
+      [[], [rowA.uuid], [rowB.uuid], []],
+    )
+    t.end()
+  })
+
+  t.test('it deletes a row and keeps the order of the others', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO20'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    const rowC = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB, rowC] })
+    const before = getSet(videoId)
+
+    await deleteRow(videoId, before.rows[1].id)
+    const after = getSet(videoId)
+
+    t.same(
+      after.rows.map((row) => row.sources),
+      [[rowA.uuid], [rowC.uuid]],
+    )
+    t.end()
+  })
+
+  t.test('it writes the previous file to <video-id>.prev.json before each change', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO21'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+    const decisionsFilePath = join(dir, 'decisions', `${videoId}.json`)
+    const prevFilePath = join(dir, 'decisions', `${videoId}.prev.json`)
+    const contentBeforeFirstChange = readFileSync(decisionsFilePath, 'utf8')
+
+    await updateRow(videoId, rowId, { note: 'first change' })
+
+    t.ok(existsSync(prevFilePath))
+    t.equal(readFileSync(prevFilePath, 'utf8'), contentBeforeFirstChange)
+
+    const contentAfterFirstChange = readFileSync(decisionsFilePath, 'utf8')
+    await updateRow(videoId, rowId, { note: 'second change' })
+
+    t.equal(readFileSync(prevFilePath, 'utf8'), contentAfterFirstChange)
+    t.end()
+  })
+
+  t.test('it keeps changes after a fresh store instance reads the file again', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO22'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    await updateRow(videoId, rowId, { note: 'saved for real' })
+
+    const freshStore = await import(`../app/store.js?fresh=${randomUUID()}`)
+    const after = freshStore.getSet(videoId)
+
+    t.equal(after.rows[0].note, 'saved for real')
+    t.end()
+  })
+
+  t.test('it runs two changes at the same time without losing one', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO23'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    const [decisionA, decisionB] = before.rows
+
+    await Promise.all([
+      updateRow(videoId, decisionA.id, { note: 'from A' }),
+      updateRow(videoId, decisionB.id, { note: 'from B' }),
+    ])
+    const after = getSet(videoId)
+
+    t.equal(after.rows[0].note, 'from A')
+    t.equal(after.rows[1].note, 'from B')
     t.end()
   })
 

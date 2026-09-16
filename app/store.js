@@ -16,6 +16,10 @@ function decisionsPath(videoId) {
   return join(dataDir(), 'decisions', `${videoId}.json`)
 }
 
+function decisionsPrevPath(videoId) {
+  return join(dataDir(), 'decisions', `${videoId}.prev.json`)
+}
+
 function listMergedFilenames(videoId) {
   const dir = mergedDirFor(videoId)
   if (!existsSync(dir)) return []
@@ -88,6 +92,41 @@ function isDecided(row) {
   return row.start !== null || row.track !== null
 }
 
+function findRowIndex(doc, rowId) {
+  const index = doc.rows.findIndex((row) => row.id === rowId)
+  if (index === -1) throw new Error(`no row ${rowId} for video id ${doc.videoId}`)
+  return index
+}
+
+function copyToPrevFile(videoId) {
+  const target = decisionsPath(videoId)
+  writeFileSync(decisionsPrevPath(videoId), readFileSync(target))
+}
+
+const writeQueues = new Map()
+
+function enqueue(videoId, fn) {
+  const previous = writeQueues.get(videoId) || Promise.resolve()
+  const next = previous.catch(() => {}).then(fn)
+  writeQueues.set(videoId, next)
+  return next
+}
+
+function applyChange(videoId, mutate) {
+  return enqueue(videoId, () => {
+    const doc = loadDecisions(videoId)
+    if (!doc) {
+      throw new Error(`no merged results for video id ${videoId}`)
+    }
+    copyToPrevFile(videoId)
+    const now = new Date().toISOString()
+    mutate(doc, now)
+    doc.updatedAt = now
+    writeDecisionsFile(videoId, doc)
+    return doc
+  })
+}
+
 export function listSets() {
   const withDecisions = []
   const mergedOnly = []
@@ -135,4 +174,52 @@ export function getSet(videoId) {
     merged: row.sources.map((uuid) => mergedByUuid.get(uuid)).filter(Boolean),
   }))
   return { videoId, mergedFile: doc.mergedFile, set: doc.set, rows }
+}
+
+export function updateRow(videoId, rowId, patch) {
+  return applyChange(videoId, (doc, now) => {
+    const row = doc.rows[findRowIndex(doc, rowId)]
+    if ('start' in patch) row.start = patch.start
+    if ('track' in patch) row.track = patch.track
+    if ('note' in patch) row.note = patch.note
+    row.updatedAt = now
+  })
+}
+
+export function mergeRow(videoId, rowId, direction) {
+  return applyChange(videoId, (doc, now) => {
+    const index = findRowIndex(doc, rowId)
+    if (direction === 'up') {
+      if (index === 0) throw new Error('cannot merge the first row up')
+      const target = doc.rows[index - 1]
+      const source = doc.rows[index]
+      target.sources = [...target.sources, ...source.sources]
+      target.updatedAt = now
+      doc.rows.splice(index, 1)
+    } else if (direction === 'down') {
+      if (index === doc.rows.length - 1) throw new Error('cannot merge the last row down')
+      const target = doc.rows[index]
+      const source = doc.rows[index + 1]
+      target.sources = [...target.sources, ...source.sources]
+      target.updatedAt = now
+      doc.rows.splice(index + 1, 1)
+    } else {
+      throw new Error(`unknown merge direction ${direction}`)
+    }
+  })
+}
+
+export function insertEmptyRow(videoId, rowId, position) {
+  return applyChange(videoId, (doc, now) => {
+    const index = findRowIndex(doc, rowId)
+    const newRow = { id: randomUUID(), sources: [], start: null, track: null, note: '', updatedAt: now }
+    const insertAt = position === 'above' ? index : index + 1
+    doc.rows.splice(insertAt, 0, newRow)
+  })
+}
+
+export function deleteRow(videoId, rowId) {
+  return applyChange(videoId, (doc) => {
+    doc.rows.splice(findRowIndex(doc, rowId), 1)
+  })
 }
