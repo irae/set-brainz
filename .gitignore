@@ -2,3 +2,5 @@ data/
 tools/
 .claude/
 __pycache__/
+node_modules/
+.tap/

@@ -1,0 +1,21 @@
+{
+  "name": "set-brainz",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tap"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jquery": "^3.7.1"
+  },
+  "devDependencies": {
+    "tap": "^21.1.0"
+  },
+  "tap": {
+    "exclude": [
+      "tests/helpers/**"
+    ]
+  }
+}
