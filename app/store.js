@@ -103,28 +103,17 @@ function copyToPrevFile(videoId) {
   writeFileSync(decisionsPrevPath(videoId), readFileSync(target))
 }
 
-const writeQueues = new Map()
-
-function enqueue(videoId, fn) {
-  const previous = writeQueues.get(videoId) || Promise.resolve()
-  const next = previous.catch(() => {}).then(fn)
-  writeQueues.set(videoId, next)
-  return next
-}
-
 function applyChange(videoId, mutate) {
-  return enqueue(videoId, () => {
-    const doc = loadDecisions(videoId)
-    if (!doc) {
-      throw new Error(`no merged results for video id ${videoId}`)
-    }
-    copyToPrevFile(videoId)
-    const now = new Date().toISOString()
-    mutate(doc, now)
-    doc.updatedAt = now
-    writeDecisionsFile(videoId, doc)
-    return doc
-  })
+  const doc = loadDecisions(videoId)
+  if (!doc) {
+    throw new Error(`no merged results for video id ${videoId}`)
+  }
+  const now = new Date().toISOString()
+  mutate(doc, now)
+  copyToPrevFile(videoId)
+  doc.updatedAt = now
+  writeDecisionsFile(videoId, doc)
+  return doc
 }
 
 export function listSets() {
@@ -212,6 +201,9 @@ export function mergeRow(videoId, rowId, direction) {
 export function insertEmptyRow(videoId, rowId, position) {
   return applyChange(videoId, (doc, now) => {
     const index = findRowIndex(doc, rowId)
+    if (position !== 'above' && position !== 'below') {
+      throw new Error(`unknown insert position ${position}`)
+    }
     const newRow = { id: randomUUID(), sources: [], start: null, track: null, note: '', updatedAt: now }
     const insertAt = position === 'above' ? index : index + 1
     doc.rows.splice(insertAt, 0, newRow)

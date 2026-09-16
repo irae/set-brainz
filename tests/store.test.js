@@ -335,7 +335,7 @@ test('store changes (functional)', (t) => {
     t.end()
   })
 
-  t.test('it refuses a merge up on the first row and a merge down on the last row', async (t) => {
+  t.test('it refuses a merge up on the first row and a merge down on the last row', (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
     const videoId = 'TESTVIDEO18'
@@ -344,8 +344,8 @@ test('store changes (functional)', (t) => {
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
     const before = getSet(videoId)
 
-    await t.rejects(mergeRow(videoId, before.rows[0].id, 'up'))
-    await t.rejects(mergeRow(videoId, before.rows[1].id, 'down'))
+    t.throws(() => mergeRow(videoId, before.rows[0].id, 'up'))
+    t.throws(() => mergeRow(videoId, before.rows[1].id, 'down'))
     t.end()
   })
 
@@ -368,6 +368,17 @@ test('store changes (functional)', (t) => {
       after.rows.map((row) => row.sources),
       [[], [rowA.uuid], [rowB.uuid], []],
     )
+    t.end()
+  })
+
+  t.test('it refuses an unknown insert position', (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO24'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+
+    t.throws(() => insertEmptyRow(videoId, before.rows[0].id, 'sideways'))
     t.end()
   })
 
@@ -431,7 +442,7 @@ test('store changes (functional)', (t) => {
     t.end()
   })
 
-  t.test('it runs two changes at the same time without losing one', async (t) => {
+  t.test('it keeps both changes when they run one after the other, and .prev.json holds the state before the second', async (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
     const videoId = 'TESTVIDEO23'
@@ -440,15 +451,17 @@ test('store changes (functional)', (t) => {
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
     const before = getSet(videoId)
     const [decisionA, decisionB] = before.rows
+    const decisionsFilePath = join(dir, 'decisions', `${videoId}.json`)
+    const prevFilePath = join(dir, 'decisions', `${videoId}.prev.json`)
 
-    await Promise.all([
-      updateRow(videoId, decisionA.id, { note: 'from A' }),
-      updateRow(videoId, decisionB.id, { note: 'from B' }),
-    ])
+    await updateRow(videoId, decisionA.id, { note: 'from A' })
+    const contentAfterFirstChange = readFileSync(decisionsFilePath, 'utf8')
+    await updateRow(videoId, decisionB.id, { note: 'from B' })
+
     const after = getSet(videoId)
-
     t.equal(after.rows[0].note, 'from A')
     t.equal(after.rows[1].note, 'from B')
+    t.equal(readFileSync(prevFilePath, 'utf8'), contentAfterFirstChange)
     t.end()
   })
 
