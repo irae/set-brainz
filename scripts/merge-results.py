@@ -3,14 +3,14 @@
 # into a merged JSON file under data/merged/<video-id>/. Every remix/version
 # variant is kept, never collapsed.
 # Usage: scripts/merge-results.py <video-id> [--force]
-import hashlib, json, os, re, sys, time, uuid
+import hashlib, json, os, re, sys, uuid
 from datetime import datetime, timezone
 
 SEG = 12                       # RipThatSet chunk length in seconds
 GAP = 8 * 60                   # same track seen again within this gap = same play
 MAX_SEG_GAP = 4                # RipThatSet: chunks without a hit tolerated inside one run
-MIN_RUN_COUNT = 2              # RipThatSet: chunks needed before a run counts as a hit
-GAP_ROW_SECONDS = 90           # seconds with no hit from any tool = a gap row
+MIN_RUN_COUNT = 2
+GAP_ROW_SECONDS = 90
 LOW_CONFIDENCE = 75            # used by the decisions app to flag weak hits, not by this script
 ROW_NAMESPACE = uuid.UUID("3349c065-a49c-4621-951d-26ea3045a941")
 
@@ -194,18 +194,15 @@ def latest_merged(out_dir):
 
 def write_merged(out_dir, vid, doc):
     os.makedirs(out_dir, exist_ok=True)
-    for _ in range(5):
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        out_path = os.path.join(out_dir, f"{ts}-{vid}.json")
-        if not os.path.exists(out_path):
-            break
-        time.sleep(1)
-    else:
-        print("error: could not allocate a unique output filename", file=sys.stderr)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_path = os.path.join(out_dir, f"{ts}-{vid}.json")
+    try:
+        with open(out_path, "x") as f:
+            json.dump(doc, f, indent=2)
+            f.write("\n")
+    except FileExistsError:
+        print(f"error: {out_path} already exists; run again in a new second", file=sys.stderr)
         sys.exit(1)
-    with open(out_path, "w") as f:
-        json.dump(doc, f, indent=2)
-        f.write("\n")
     return out_path
 
 
