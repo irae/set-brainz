@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tap"
+    "test": "tap",
+    "start": "node app/server.js"
   },
   "dependencies": {
     "express": "^4.21.2",
