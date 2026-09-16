@@ -242,21 +242,40 @@ function rowIdOf($el) {
   return $el.closest('tr').data('row-id')
 }
 
+let hoveredRow = null
+let shiftHeld = false
+
+function applyShiftHover() {
+  $('tr.shift-hover').removeClass('shift-hover')
+  if (shiftHeld && hoveredRow) hoveredRow.addClass('shift-hover')
+}
+
 $(document).on('keydown', (e) => {
-  if (e.key === 'Shift') $('body').addClass('shift-down')
+  if (e.key !== 'Shift') return
+  $('body').addClass('shift-down')
+  shiftHeld = true
+  applyShiftHover()
 })
 $(document).on('keyup', (e) => {
-  if (e.key === 'Shift') $('body').removeClass('shift-down')
+  if (e.key !== 'Shift') return
+  $('body').removeClass('shift-down')
+  shiftHeld = false
+  applyShiftHover()
 })
 $(window).on('blur', () => {
   $('body').removeClass('shift-down')
+  shiftHeld = false
+  applyShiftHover()
 })
 
-$(document).on('mouseenter mousemove', 'tr', function (e) {
-  $(this).toggleClass('shift-hover', e.shiftKey)
+$(document).on('mouseenter', 'tr', function (e) {
+  hoveredRow = $(this)
+  shiftHeld = e.shiftKey
+  applyShiftHover()
 })
 $(document).on('mouseleave', 'tr', function () {
-  $(this).removeClass('shift-hover')
+  hoveredRow = null
+  applyShiftHover()
 })
 
 $(document).on('click', 'a.jump-link', function (e) {
