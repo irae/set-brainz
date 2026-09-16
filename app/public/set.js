@@ -133,7 +133,6 @@ function buildRowHtml(row, index, lowConfidence) {
 }
 
 window.onYouTubeIframeAPIReady = function onYouTubeIframeAPIReady() {
-  if (!VIDEO_ID) return
   player = new YT.Player('yt', { videoId: VIDEO_ID, width: 640, height: 360 })
 }
 
@@ -144,15 +143,11 @@ $(document).on('click', 'a.jump-link', function (e) {
   player.playVideo()
 })
 
-if (!VIDEO_ID) {
-  showMessage('No video ID in the address. Open a set from the index page.')
-} else {
-  $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
-    .done((data) => {
-      const $tbody = $('#tracklist tbody')
-      data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
-    })
-    .fail(() => {
-      showMessage('Could not load this set. Check the server, then reload the page.')
-    })
-}
+$.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
+  .done((data) => {
+    const $tbody = $('#tracklist tbody')
+    data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
+  })
+  .fail(() => {
+    showMessage('Could not load this set. Check the server, then reload the page.')
+  })
