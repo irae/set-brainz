@@ -18,6 +18,7 @@
     "exclude": [
       "tests/helpers/**"
     ],
-    "timeout": 90
+    "timeout": 90,
+    "disable-coverage": true
   }
 }
