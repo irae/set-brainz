@@ -102,6 +102,11 @@ function jumpLink(seconds, css) {
   return `<a class="jump-link ${css}" href="#" data-t="${t}">${hms(t)}</a>`
 }
 
+function decidedSmallLine(index) {
+  const zeroLink = index === 0 ? `${jumpLink(0, 'was-big')} ` : ''
+  return `<div class="small">${zeroLink}${UNDO_LINK_HTML}</div>`
+}
+
 function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
@@ -159,7 +164,7 @@ function buildEmptyRow(row, index) {
   const jumpHtml = decided
     ? jumpLink(row.start.seconds, 'big decided')
     : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
-  const smallLine = decided ? `<div class="small">${UNDO_LINK_HTML}</div>` : ''
+  const smallLine = decided ? decidedSmallLine(index) : ''
   const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
@@ -178,7 +183,7 @@ function buildGapRow(row, index) {
   const bigSeconds = decided ? row.start.seconds : defaultBig
   const bigCss = decided ? 'big decided' : 'big'
   const smallLine = decided
-    ? `<div class="small">${UNDO_LINK_HTML}</div>`
+    ? decidedSmallLine(index)
     : `<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div>`
   const span = Math.round(latest - earliest)
   const minutes = Math.floor(span / 60)
@@ -212,7 +217,7 @@ function buildTrackRow(row, index, lowConfidence) {
   const bigSeconds = decided ? row.start.seconds : defaultBig
   const bigCss = decided ? 'big decided' : 'big'
   const smallLine = decided
-    ? `<div class="small">${UNDO_LINK_HTML}</div>`
+    ? decidedSmallLine(index)
     : `<div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}</div>`
 
   const guessTitleHtml = weak

@@ -157,6 +157,38 @@ test('a decided row hides its small timestamps and shows undo instead, and undo 
   t.end()
 })
 
+test('a decided first row keeps its 00:00:00 link alongside undo, a later decided row shows only undo (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO63'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', {
+    rows: [makeMergedRow(), makeMergedRow({ earliest: 50, best: 55, latest: 60 })],
+  })
+  const base = await startServer(t, dir)
+  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  await fetch(`${base}/api/sets/${videoId}/rows/${before.rows[0].id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ start: { seconds: 30, from: 'best' } }),
+  })
+  await fetch(`${base}/api/sets/${videoId}/rows/${before.rows[1].id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ start: { seconds: 90, from: 'best' } }),
+  })
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 2"))
+
+  const firstRowSmall = pwEval(session, "document.querySelectorAll('tbody tr')[0].querySelector('.jump .small').innerHTML")
+  t.match(firstRowSmall, /data-t="0"/, 'the first row keeps a link back to the start of the set')
+  t.match(firstRowSmall, /undo-link/, 'the first row also offers undo')
+
+  const secondRowSmall = pwEval(session, "document.querySelectorAll('tbody tr')[1].querySelector('.jump .small').innerHTML")
+  t.notMatch(secondRowSmall, /data-t="0"/, 'a later decided row has no zero link')
+  t.match(secondRowSmall, /undo-link/)
+  t.end()
+})
+
 test('a shift click on the big timestamp always saves it, on a row with or without a decision already (functional)', { skip: skipReason }, async (t) => {
   const dir = makeEmptyDataDir(t)
   const videoId = 'TESTVIDEO56'
