@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 
 const cache = new Map()
 
-const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab', 'was-big']
+const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab', 'was-big', 'big']
 
 function storeError(code, message) {
   return Object.assign(new Error(message), { code })
