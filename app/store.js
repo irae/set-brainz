@@ -240,6 +240,12 @@ export function updateRow(videoId, rowId, patch) {
   })
 }
 
+function keepEarlierDecision(target, source) {
+  if (target.start === null) target.start = source.start
+  if (target.track === null) target.track = source.track
+  if (!target.note) target.note = source.note
+}
+
 export function mergeRow(videoId, rowId, direction) {
   return applyChange(videoId, (doc, now) => {
     const index = findRowIndex(doc, rowId)
@@ -248,6 +254,7 @@ export function mergeRow(videoId, rowId, direction) {
       const target = doc.rows[index - 1]
       const source = doc.rows[index]
       target.sources = [...target.sources, ...source.sources]
+      keepEarlierDecision(target, source)
       target.updatedAt = now
       doc.rows.splice(index, 1)
     } else if (direction === 'down') {
@@ -255,6 +262,7 @@ export function mergeRow(videoId, rowId, direction) {
       const target = doc.rows[index]
       const source = doc.rows[index + 1]
       target.sources = [...target.sources, ...source.sources]
+      keepEarlierDecision(target, source)
       target.updatedAt = now
       doc.rows.splice(index + 1, 1)
     } else {

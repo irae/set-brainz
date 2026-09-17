@@ -335,6 +335,85 @@ test('store changes (functional)', (t) => {
     t.end()
   })
 
+  t.test('a merge takes the start from the row that goes away, when the surviving row has none', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO27'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    await updateRow(videoId, before.rows[1].id, { start: { seconds: 42, from: 'best' } })
+
+    await mergeRow(videoId, before.rows[1].id, 'up')
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].start, { seconds: 42, from: 'best' })
+    t.end()
+  })
+
+  t.test('a merge takes the track from the row that goes away, when the surviving row has none', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO28'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    await updateRow(videoId, before.rows[1].id, { track: { artists: 'Fixture Artist', title: 'Fixture Title' } })
+
+    await mergeRow(videoId, before.rows[1].id, 'up')
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].track, { artists: 'Fixture Artist', title: 'Fixture Title' })
+    t.end()
+  })
+
+  t.test('a merge takes the note from the row that goes away, when the surviving row has none', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO29'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    await updateRow(videoId, before.rows[1].id, { note: 'check this drop' })
+
+    await mergeRow(videoId, before.rows[1].id, 'up')
+    const after = getSet(videoId)
+
+    t.equal(after.rows[0].note, 'check this drop')
+    t.end()
+  })
+
+  t.test('a merge keeps the surviving row\'s start, track and note when both rows hold one', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO30'
+    const rowA = makeMergedRow()
+    const rowB = makeMergedRow()
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+    const before = getSet(videoId)
+    await updateRow(videoId, before.rows[0].id, {
+      start: { seconds: 10, from: 'best' },
+      track: { artists: 'Earlier Artist', title: 'Earlier Title' },
+      note: 'earlier note',
+    })
+    await updateRow(videoId, before.rows[1].id, {
+      start: { seconds: 99, from: 'best' },
+      track: { artists: 'Later Artist', title: 'Later Title' },
+      note: 'later note',
+    })
+
+    await mergeRow(videoId, before.rows[1].id, 'up')
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].start, { seconds: 10, from: 'best' })
+    t.same(after.rows[0].track, { artists: 'Earlier Artist', title: 'Earlier Title' })
+    t.equal(after.rows[0].note, 'earlier note')
+    t.end()
+  })
+
   t.test('it refuses a merge up on the first row and a merge down on the last row', (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
