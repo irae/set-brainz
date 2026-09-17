@@ -18,6 +18,8 @@ Short conclusion from the research:
 
 Next step: test Tracklistify or SongRec on one set for a baseline, then test Panako with a local library.
 
+Setup: Node 20 or later, then `npm install` once, in the project root.
+
 Scripts, in run order:
 
 1. `scripts/download-audio.sh <youtube-url>` — audio-only download into `data/audio/<video-id>/`, plus an MP3 copy.
