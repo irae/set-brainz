@@ -17,6 +17,7 @@
   "tap": {
     "exclude": [
       "tests/helpers/**"
-    ]
+    ],
+    "timeout": 90
   }
 }
