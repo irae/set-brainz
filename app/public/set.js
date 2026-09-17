@@ -7,6 +7,7 @@ function videoIdFromPath() {
 
 const VIDEO_ID = videoIdFromPath()
 const GRAB_LINK_HTML = '<a href="#" class="grab-link">grab</a>'
+const UNDO_LINK_HTML = '<a href="#" class="undo-link">undo</a>'
 const POSITION_KEY = `sb-position:${VIDEO_ID}`
 
 function loadSavedPosition() {
@@ -158,11 +159,11 @@ function buildEmptyRow(row, index) {
   const jumpHtml = decided
     ? jumpLink(row.start.seconds, 'big decided')
     : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
-  const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
+  const smallLine = decided ? `<div class="small">${UNDO_LINK_HTML}</div>` : ''
   const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
-<td class="jump">${jumpHtml}${GRAB_LINK_HTML}${firstRowLink}</td>
+<td class="jump">${jumpHtml}${GRAB_LINK_HTML}${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
 ${rowActionsHtml()}</td>
 <td class="alts"></td></tr>`
@@ -176,15 +177,17 @@ function buildGapRow(row, index) {
   const decided = row.start !== null
   const bigSeconds = decided ? row.start.seconds : defaultBig
   const bigCss = decided ? 'big decided' : 'big'
-  const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
+  const smallLine = decided
+    ? `<div class="small">${UNDO_LINK_HTML}</div>`
+    : `<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div>`
   const span = Math.round(latest - earliest)
   const minutes = Math.floor(span / 60)
   const secs = span % 60
   const { titleHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
-<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}${firstRowLink}
-<div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div></td>
+<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
+${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}<div class="small">${minutes} min ${secs} s with no match</div>
 ${rowActionsHtml()}</td>
 <td class="alts"></td></tr>`
@@ -208,7 +211,9 @@ function buildTrackRow(row, index, lowConfidence) {
   const decided = row.start !== null
   const bigSeconds = decided ? row.start.seconds : defaultBig
   const bigCss = decided ? 'big decided' : 'big'
-  const wasBigLink = decided ? ` ${jumpLink(defaultBig, 'was-big')}` : ''
+  const smallLine = decided
+    ? `<div class="small">${UNDO_LINK_HTML}</div>`
+    : `<div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}</div>`
 
   const guessTitleHtml = weak
     ? `ID <small>maybe ${escapeHtml(primary.title)}</small>`
@@ -226,7 +231,7 @@ function buildTrackRow(row, index, lowConfidence) {
 
   return `<tr class="${rowClasses(row, cls)}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
-<div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
+${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div><div class="small ev">${variantEvidence(primary)}</div>
 ${rowActionsHtml()}</td>
 <td class="alts">${altsHtml}</td></tr>`
@@ -362,6 +367,7 @@ function rowIdOf($el) {
 
 let hoveredRow = null
 let shiftHeld = false
+let hasStartedPlayback = false
 
 function applyShiftHover() {
   $('tr.shift-hover').removeClass('shift-hover')
@@ -386,6 +392,26 @@ $(window).on('blur', () => {
   applyShiftHover()
 })
 
+$(document).on('keydown', (e) => {
+  if (e.code !== 'Space' && e.key !== ' ') return
+  const dialogEl = document.getElementById('track-dialog')
+  const targetTag = e.target && e.target.tagName
+  if (dialogEl.open) return
+  if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT') return
+  if (e.target && e.target.isContentEditable) return
+  e.preventDefault()
+  if (!player || typeof player.getPlayerState !== 'function') return
+  if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+    player.pauseVideo()
+  } else {
+    player.playVideo()
+  }
+  if (typeof player.getIframe === 'function') {
+    const iframe = player.getIframe()
+    if (iframe && typeof iframe.focus === 'function') iframe.focus()
+  }
+})
+
 $(document).on('mouseenter mousemove', 'tr', function (e) {
   hoveredRow = $(this)
   shiftHeld = e.shiftKey
@@ -401,18 +427,26 @@ $(document).on('click', 'a.jump-link', function (e) {
   const $el = $(this)
   const seconds = Number($el.data('t'))
   if (e.shiftKey) {
-    const from = ['earliest', 'best', 'latest', 'was-big'].find((cls) => $el.hasClass(cls))
+    const from = ['earliest', 'best', 'latest'].find((cls) => $el.hasClass(cls))
     if (from) {
       saveStart(rowIdOf($el), seconds, from)
-    } else if ($el.hasClass('big') && $el.hasClass('decided')) {
-      clearStart(rowIdOf($el))
+    } else if ($el.hasClass('big')) {
+      saveStart(rowIdOf($el), seconds, 'big')
     }
     return
   }
   if (!player || typeof player.seekTo !== 'function') return
   player.seekTo(seconds, true)
-  player.playVideo()
+  if (!hasStartedPlayback) {
+    player.playVideo()
+    hasStartedPlayback = true
+  }
   savePosition(seconds)
+})
+
+$(document).on('click', 'a.undo-link', function (e) {
+  e.preventDefault()
+  clearStart(rowIdOf($(this)))
 })
 
 $(document).on('click', 'a.grab-link', function (e) {

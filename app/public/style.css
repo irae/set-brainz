@@ -102,18 +102,16 @@ tr.decided {
   color: #6d6;
 }
 
-a.jump-link.was-big {
-  color: #999;
-}
-
-.grab-link, .row-actions {
+.grab-link, .row-actions, .undo-link {
   display: none;
   margin-left: 6px;
   font-size: 11px;
 }
 
 body.shift-down tr:hover .grab-link,
-tr.shift-hover .grab-link {
+tr.shift-hover .grab-link,
+body.shift-down tr:hover .undo-link,
+tr.shift-hover .undo-link {
   display: inline;
 }
 
