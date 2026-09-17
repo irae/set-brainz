@@ -20,6 +20,8 @@ Next step: test Tracklistify or SongRec on one set for a baseline, then test Pan
 
 Setup: Node 20 or later, then `npm install` once, in the project root.
 
+The two set page tests in `tests/set-page.test.js` need the `playwright-cli` tool on `PATH`. Without it, those two tests skip and the rest of the suite still runs.
+
 Scripts, in run order:
 
 1. `scripts/download-audio.sh <youtube-url>` — audio-only download into `data/audio/<video-id>/`, plus an MP3 copy.

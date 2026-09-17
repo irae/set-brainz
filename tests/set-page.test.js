@@ -5,6 +5,19 @@ import { randomUUID } from 'node:crypto'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile } from './helpers/fixtures.js'
 import { createApp } from '../app/server.js'
 
+function playwrightCliAvailable() {
+  try {
+    execFileSync('playwright-cli', ['--version'], { stdio: 'ignore', timeout: 15000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const skipReason = playwrightCliAvailable()
+  ? false
+  : 'playwright-cli is not on PATH; install it with `npm install -g @playwright/cli@latest` to run this test'
+
 async function startServer(t, dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
   const app = createApp()
@@ -29,7 +42,7 @@ function pwEval(session, expr) {
 
 async function openPage(t, url) {
   const session = `sb-${randomUUID().slice(0, 8)}`
-  const child = spawn('playwright-cli', ['cli', '-s', session, 'open', '--browser=chromium', url], {
+  const child = spawn('playwright-cli', ['cli', '-s', session, 'open', '--browser=chromium', '--no-headed', url], {
     stdio: 'ignore',
     detached: true,
   })
@@ -67,7 +80,7 @@ async function waitUntil(fn) {
   throw new Error('timed out waiting for the page to update')
 }
 
-test('a track row shows the words of the user, not the guess (functional)', async (t) => {
+test('a track row shows the words of the user, not the guess (functional)', { skip: skipReason }, async (t) => {
   const dir = makeEmptyDataDir(t)
   const videoId = 'TESTVIDEO50'
   writeMergedFile(dir, videoId, '20260101T000000Z-x.json', {
@@ -102,7 +115,7 @@ test('a track row shows the words of the user, not the guess (functional)', asyn
   t.end()
 })
 
-test('a decided start can be cleared, and the row then shows its computed times again (functional)', async (t) => {
+test('a decided start can be cleared, and the row then shows its computed times again (functional)', { skip: skipReason }, async (t) => {
   const dir = makeEmptyDataDir(t)
   const videoId = 'TESTVIDEO51'
   writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
