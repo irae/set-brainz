@@ -39,11 +39,6 @@ function variantScore(variant) {
   return r * 3 + t * 5 + (conf || 0) / 20
 }
 
-function variantBestStart(variant) {
-  const runs = [...variant.ripthatset].sort((a, b) => b.count - a.count)
-  return runs.length ? runs[0].start : variant.start
-}
-
 function variantEvidence(variant) {
   const { r, t, conf } = variantStats(variant)
   const bits = []
@@ -79,6 +74,16 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
+function trackDisplay(row, guessTitleHtml, guessArtistHtml) {
+  if (row.track) {
+    return {
+      titleHtml: escapeHtml(row.track.title || 'ID'),
+      artistHtml: row.track.artists ? escapeHtml(row.track.artists) : '',
+    }
+  }
+  return { titleHtml: guessTitleHtml, artistHtml: guessArtistHtml || '' }
+}
+
 function openDialogSpan(title, artists) {
   const attrs = artists !== undefined
     ? ` data-artists="${escapeHtml(artists)}" data-title="${escapeHtml(title)}"`
@@ -109,11 +114,10 @@ function buildEmptyRow(row, index) {
     ? jumpLink(row.start.seconds, 'big decided')
     : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
   const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
-  const titleHtml = row.track !== null ? escapeHtml(row.track.title || 'ID') : 'ID'
-  const artistHtml = row.track !== null && row.track.artists ? `<div class="small">${escapeHtml(row.track.artists)}</div>` : ''
+  const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpHtml}${GRAB_LINK_HTML}${firstRowLink}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${artistHtml}
+<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
 ${rowActionsHtml()}</td>
 <td class="alts"></td>
 <td class="small"></td></tr>`
@@ -131,10 +135,11 @@ function buildGapRow(row, index) {
   const span = Math.round(latest - earliest)
   const minutes = Math.floor(span / 60)
   const secs = span % 60
+  const { titleHtml } = trackDisplay(row, 'ID', '')
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}${firstRowLink}
 <div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div></td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row)}ID</span></b><div class="small">${minutes} min ${secs} s with no match</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b><div class="small">${minutes} min ${secs} s with no match</div>
 ${rowActionsHtml()}</td>
 <td class="alts"></td>
 <td class="small"></td></tr>`
@@ -143,8 +148,7 @@ ${rowActionsHtml()}</td>
 function buildTrackRow(row, index, lowConfidence) {
   const sources = row.merged.filter((m) => m.kind === 'track')
   const scored = sources
-    .flatMap((m) => m.variants)
-    .map((v) => ({ v, score: variantScore(v) }))
+    .flatMap((m) => m.variants.map((v) => ({ v, m, score: variantScore(v) })))
     .sort((a, b) => b.score - a.score)
   const primary = scored[0].v
   const alts = scored.slice(1).map((s) => s.v)
@@ -154,17 +158,18 @@ function buildTrackRow(row, index, lowConfidence) {
 
   const earliest = Math.min(...sources.map((m) => m.earliest))
   const latest = Math.max(...sources.map((m) => m.latest))
-  const best = variantBestStart(primary)
+  const best = scored[0].m.best
   const defaultBig = index === 0 ? 0 : Math.max(0, earliest - 5)
   const decided = row.start !== null
   const bigSeconds = decided ? row.start.seconds : defaultBig
   const bigCss = decided ? 'big decided' : 'big'
   const wasBigLink = decided ? ` ${jumpLink(defaultBig, 'was-big')}` : ''
 
-  const titleHtml = weak
+  const guessTitleHtml = weak
     ? `ID <small>maybe ${escapeHtml(primary.title)}</small>`
     : escapeHtml(primary.title)
   const confSuffix = conf !== null ? ` (${Math.round(conf)}%)` : ''
+  const { titleHtml, artistHtml } = trackDisplay(row, guessTitleHtml, `${escapeHtml(primary.artist)}${confSuffix}`)
 
   const altsHtml = alts
     .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span> <span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
@@ -173,7 +178,7 @@ function buildTrackRow(row, index, lowConfidence) {
   return `<tr class="${cls}${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 <div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b><div class="small">${escapeHtml(primary.artist)}${confSuffix}</div><div class="small ev">${variantEvidence(primary)}</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b><div class="small">${artistHtml}</div><div class="small ev">${variantEvidence(primary)}</div>
 ${rowActionsHtml()}</td>
 <td class="alts">${altsHtml}</td>
 <td class="small">${variantLinks(primary)}</td></tr>`
@@ -214,6 +219,15 @@ function saveStart(rowId, seconds, from) {
     contentType: 'application/json',
     data: JSON.stringify({ start: { seconds, from } }),
   }).done(loadAndRender).fail(() => showMessage('Could not save the start. Check the server, then reload the page.'))
+}
+
+function clearStart(rowId) {
+  $.ajax({
+    url: apiUrl(rowId),
+    method: 'PATCH',
+    contentType: 'application/json',
+    data: JSON.stringify({ start: null }),
+  }).done(loadAndRender).fail(() => showMessage('Could not clear the start. Check the server, then reload the page.'))
 }
 
 function mergeRowApi(rowId, direction) {
@@ -284,9 +298,13 @@ $(document).on('click', 'a.jump-link', function (e) {
   const $el = $(this)
   const seconds = Number($el.data('t'))
   if (e.shiftKey) {
-    const from = ['earliest', 'best', 'latest'].find((cls) => $el.hasClass(cls))
+    const from = ['earliest', 'best', 'latest', 'was-big'].find((cls) => $el.hasClass(cls))
     if (from) {
       saveStart(rowIdOf($el), seconds, from)
+      return
+    }
+    if ($el.hasClass('big') && $el.hasClass('decided')) {
+      clearStart(rowIdOf($el))
       return
     }
   }
