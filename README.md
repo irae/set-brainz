@@ -37,5 +37,6 @@ All local data lives in `data/`. Third-party tool clones live in `tools/`. Git i
 | `data/runs/<video-id>/ripthatset/` | RipThatSet log and JSON |
 | `data/merged/<video-id>/` | merged JSON files, one per merge |
 | `data/decisions/` | one decision file per video, holding its rows and tracks |
+| `data/views/<video-id>/` | old generated views, kept on disk, no script writes there now |
 | `data/tmp/` | temporary audio chunks |
 | `tools/tracklistify/`, `tools/ripthatset/` | tool clones with their own environments |
