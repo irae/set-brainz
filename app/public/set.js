@@ -222,7 +222,7 @@ function buildTrackRow(row, index, lowConfidence) {
   const { titleHtml, artistHtml } = trackDisplay(row, guessTitleHtml, `${escapeHtml(primary.artist)}${confSuffix}`)
 
   const altsHtml = alts
-    .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span>${linksSpan(variantLinks(v))} <span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
+    .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span>${linksSpan(variantLinks(v))}<br><span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
     .join('<br>')
 
   const titleLinksHtml = row.track
