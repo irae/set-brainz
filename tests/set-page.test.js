@@ -67,6 +67,13 @@ function shiftClick(session, selector) {
   pw(session, ['keyup', 'Shift'])
 }
 
+function shiftHoverClick(session, rowSelector, linkSelector) {
+  pw(session, ['keydown', 'Shift'])
+  pw(session, ['hover', rowSelector])
+  pw(session, ['click', linkSelector])
+  pw(session, ['keyup', 'Shift'])
+}
+
 function installSeekSpy(session) {
   pwEval(session, "(() => { player = { seekCalls: 0, seekTo() { this.seekCalls++ }, playVideo(){}, getCurrentTime(){ return 0 }, getPlayerState(){ return 2 } }; return 'ok' })()")
 }
@@ -119,7 +126,7 @@ test('a track row shows the words of the user, not the guess (functional)', { sk
   t.end()
 })
 
-test('a decided start can be cleared, and the row then shows its computed times again (functional)', { skip: skipReason }, async (t) => {
+test('a decided row hides its small timestamps and shows undo instead, and undo restores the computed times (functional)', { skip: skipReason }, async (t) => {
   const dir = makeEmptyDataDir(t)
   const videoId = 'TESTVIDEO51'
   writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
@@ -137,13 +144,71 @@ test('a decided start can be cleared, and the row then shows its computed times 
   const decidedHtml = pwEval(session, "document.querySelector('a.jump-link.big').outerHTML")
   t.match(decidedHtml, /\bdecided\b/)
   t.match(decidedHtml, /data-t="42"/)
+  t.equal(pwEval(session, "document.querySelector('a.jump-link.earliest')"), null)
+  t.equal(pwEval(session, "getComputedStyle(document.querySelector('a.undo-link')).display"), 'none', 'undo is hidden until shift and hover')
 
-  shiftClick(session, 'a.jump-link.big.decided')
+  shiftHoverClick(session, 'tbody tr', 'a.undo-link')
   await waitUntil(() => !pwEval(session, "document.querySelector('a.jump-link.big').outerHTML").includes('decided'))
 
   const clearedHtml = pwEval(session, "document.querySelector('a.jump-link.big').outerHTML")
   t.notMatch(clearedHtml, /\bdecided\b/)
   t.match(clearedHtml, /data-t="0"/)
+  t.ok(pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"), 'the small timestamps return once undecided')
+  t.end()
+})
+
+test('a shift click on the big timestamp always saves it, on a row with or without a decision already (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO56'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', {
+    rows: [
+      makeMergedRow({ earliest: 5, best: 5, latest: 10 }),
+      makeMergedRow({ earliest: 50, best: 55, latest: 60 }),
+    ],
+  })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 2"))
+
+  const bigSelector = "document.querySelectorAll('tbody tr')[1].querySelector('a.jump-link.big')"
+  const before = pwEval(session, `${bigSelector}.outerHTML`)
+  t.notMatch(before, /\bdecided\b/)
+  t.match(before, /data-t="45"/)
+
+  shiftClick(session, 'tbody tr:nth-child(2) a.jump-link.big')
+  await waitUntil(() => pwEval(session, `${bigSelector}.outerHTML`).includes('decided'))
+
+  let after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  t.match(after.rows[1].start, { seconds: 45, from: 'big' })
+
+  shiftClick(session, 'tbody tr:nth-child(2) a.jump-link.big.decided')
+  await wait(300)
+
+  after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  t.match(after.rows[1].start, { seconds: 45, from: 'big' }, 'a second shift click on a decided big timestamp saves again, it does not clear')
+  t.match(pwEval(session, `${bigSelector}.outerHTML`), /\bdecided\b/)
+  t.end()
+})
+
+test('a failed save shows a message with the status code, and the page never fails in silence (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO60'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
+
+  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  const rowId = before.rows[0].id
+  await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, { method: 'DELETE' })
+
+  shiftClick(session, 'a.jump-link.earliest')
+  await waitUntil(() => pwEval(session, "document.querySelector('.note') !== null"))
+
+  const noteText = pwEval(session, "document.querySelector('.note').textContent")
+  t.match(noteText, /404/)
   t.end()
 })
 
@@ -170,6 +235,71 @@ test('a plain click moves the player, and a shift click on a small timestamp sav
   const after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
   t.match(after.rows[0].start, { from: 'earliest' })
   t.equal(pwEval(session, 'player.seekCalls'), 1)
+  t.end()
+})
+
+test('the first plain click starts playback, and a later plain click only seeks (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO61'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
+  pwEval(session, "(() => { player = { seekCalls: 0, playCalls: 0, seekTo() { this.seekCalls++ }, playVideo() { this.playCalls++ }, getCurrentTime(){ return 0 }, getPlayerState(){ return 2 } }; return 'ok' })()")
+
+  pw(session, ['click', 'a.jump-link.earliest'])
+  await wait(300)
+  t.equal(pwEval(session, 'player.seekCalls'), 1)
+  t.equal(pwEval(session, 'player.playCalls'), 1, 'the first plain click starts playback')
+
+  pw(session, ['click', 'a.jump-link.best'])
+  await wait(300)
+  t.equal(pwEval(session, 'player.seekCalls'), 2)
+  t.equal(pwEval(session, 'player.playCalls'), 1, 'a later plain click only seeks, it does not force play again')
+  t.end()
+})
+
+test('the space bar starts and pauses the player, but not while the user types or the dialog is open (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO62'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
+  pwEval(session, `(() => {
+    window.__calls = []
+    window.__state = YT.PlayerState.PAUSED
+    player = {
+      playVideo() { window.__calls.push('play'); window.__state = YT.PlayerState.PLAYING },
+      pauseVideo() { window.__calls.push('pause'); window.__state = YT.PlayerState.PAUSED },
+      getPlayerState() { return window.__state },
+    }
+    return 'ok'
+  })()`)
+
+  function pressSpace(target) {
+    return pwEval(session, `(() => {
+      const ev = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true })
+      ;(${target}).dispatchEvent(ev)
+      return 'ok'
+    })()`)
+  }
+
+  pressSpace('document.body')
+  t.same(pwEval(session, 'window.__calls'), ['play'], 'space starts a paused player')
+
+  pressSpace('document.body')
+  t.same(pwEval(session, 'window.__calls'), ['play', 'pause'], 'space pauses a playing player')
+
+  pwEval(session, "(() => { window.__calls = []; document.getElementById('track-dialog').showModal(); return 'ok' })()")
+  pressSpace('document.body')
+  t.same(pwEval(session, 'window.__calls'), [], 'space does nothing while the dialog is open')
+  pwEval(session, "(() => { document.getElementById('track-dialog').close(); window.__calls = []; return 'ok' })()")
+
+  pressSpace("document.querySelector('[name=note]')")
+  t.same(pwEval(session, 'window.__calls'), [], 'space does nothing while the user types in an input')
   t.end()
 })
 
