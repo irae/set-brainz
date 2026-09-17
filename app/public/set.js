@@ -233,11 +233,12 @@ function buildTrackRow(row, index, lowConfidence) {
   const titleLinksHtml = row.track
     ? linksSpan(searchLinksHtml(row.track.title, row.track.artists))
     : linksSpan(variantLinks(primary))
+  const evidenceHtml = row.track ? '' : `<div class="small ev">${variantEvidence(primary)}</div>`
 
   return `<tr class="${rowClasses(row, cls)}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div><div class="small ev">${variantEvidence(primary)}</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div>${evidenceHtml}
 ${rowActionsHtml()}</td>
 <td class="alts">${altsHtml}</td></tr>`
 }

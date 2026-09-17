@@ -468,3 +468,50 @@ test('a row is coloured ready only when it holds a decided start and a postable 
   t.notMatch(classOf(trackOnlyRowId), /\brow-ready\b/)
   t.end()
 })
+
+test('a decided track hides the evidence line of the guess, but an alternative keeps its own (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO64'
+  const rowA = makeMergedRow()
+  const rowB = makeMergedRow({
+    variants: [
+      {
+        title: 'Primary Guess',
+        artist: 'Primary Artist',
+        start: 0,
+        end: 10,
+        tracklistify: [{ confidence: 90 }],
+        ripthatset: [{ count: 3 }],
+      },
+      {
+        title: 'Alt Guess',
+        artist: 'Alt Artist',
+        start: 20,
+        end: 30,
+        tracklistify: [],
+        ripthatset: [{ count: 4 }],
+      },
+    ],
+  })
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
+  const base = await startServer(t, dir)
+  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  await fetch(`${base}/api/sets/${videoId}/rows/${before.rows[1].id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ track: { artists: 'Real Artist', title: 'Real Title' } }),
+  })
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 2"))
+
+  const firstRowEv = pwEval(session, "document.querySelectorAll('tbody tr')[0].querySelector('.ev')")
+  t.not(firstRowEv, null, 'an undecided row still shows the evidence line of its guess')
+
+  const secondRowEv = pwEval(session, "document.querySelectorAll('tbody tr')[1].querySelector('.ev')")
+  t.equal(secondRowEv, null, 'a decided row hides the evidence line of its guess')
+
+  const secondRowAlts = pwEval(session, "document.querySelectorAll('tbody tr')[1].querySelector('.alts').textContent")
+  t.match(secondRowAlts, /R 4 chunks/, 'the alternative keeps its own evidence line')
+  t.end()
+})
