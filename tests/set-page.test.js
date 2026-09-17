@@ -227,14 +227,22 @@ test('on load, a saved position mutes, plays, seeks, pauses and unmutes once; no
     const afterReady = { restoring: restoringPosition, calls: [...window.__calls] }
     onPlayerStateChange({ data: YT.PlayerState.PLAYING })
     const afterPlaying = { restoring: restoringPosition, calls: [...window.__calls] }
-    return { afterReady, afterPlaying }
+    onPlayerStateChange({ data: YT.PlayerState.PAUSED })
+    const afterPaused = { restoring: restoringPosition, calls: [...window.__calls] }
+    return { afterReady, afterPlaying, afterPaused }
   })()`)
 
   t.equal(snapshot.afterReady.restoring, 55)
   t.same(snapshot.afterReady.calls, ['mute', 'playVideo'])
 
-  t.equal(snapshot.afterPlaying.restoring, 0)
-  t.same(snapshot.afterPlaying.calls, ['mute', 'playVideo', 'seekTo:55', 'pauseVideo', 'unMute'])
+  // getCurrentTime always answers 0 here. This stands in for a seekTo that has
+  // not settled. The page must not save that time over the saved position.
+  t.equal(snapshot.afterPlaying.restoring, 55)
+  t.same(snapshot.afterPlaying.calls, ['mute', 'playVideo', 'seekTo:55', 'pauseVideo'])
+  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO57')"), '55')
+
+  t.equal(snapshot.afterPaused.restoring, 0)
+  t.same(snapshot.afterPaused.calls, ['mute', 'playVideo', 'seekTo:55', 'pauseVideo', 'unMute'])
   t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO57')"), '55')
   t.end()
 })

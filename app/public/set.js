@@ -268,12 +268,14 @@ function onPlayerReady() {
 }
 
 function onPlayerStateChange(e) {
-  if (restoringPosition && e.data === YT.PlayerState.PLAYING) {
-    const target = restoringPosition
-    restoringPosition = 0
-    player.seekTo(target, true)
-    player.pauseVideo()
-    player.unMute()
+  if (restoringPosition) {
+    if (e.data === YT.PlayerState.PLAYING) {
+      player.seekTo(restoringPosition, true)
+      player.pauseVideo()
+    } else if (e.data === YT.PlayerState.PAUSED) {
+      restoringPosition = 0
+      player.unMute()
+    }
     return
   }
   if (e.data === YT.PlayerState.PLAYING) {
