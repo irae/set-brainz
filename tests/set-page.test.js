@@ -270,7 +270,7 @@ test('a plain click moves the player, and a shift click on a small timestamp sav
   t.end()
 })
 
-test('the first plain click starts playback, and a later plain click only seeks (functional)', { skip: skipReason }, async (t) => {
+test('a plain click reads the player state, not a page flag, to decide whether to start playback (functional)', { skip: skipReason }, async (t) => {
   const dir = makeEmptyDataDir(t)
   const videoId = 'TESTVIDEO61'
   writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
@@ -278,17 +278,43 @@ test('the first plain click starts playback, and a later plain click only seeks 
 
   const session = await openPage(t, `${base}/sets/${videoId}`)
   await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
-  pwEval(session, "(() => { player = { seekCalls: 0, playCalls: 0, seekTo() { this.seekCalls++ }, playVideo() { this.playCalls++ }, getCurrentTime(){ return 0 }, getPlayerState(){ return 2 } }; return 'ok' })()")
+  pwEval(session, `(() => {
+    window.__calls = []
+    player = {
+      state: YT.PlayerState.UNSTARTED,
+      seekTo() { window.__calls.push('seek') },
+      playVideo() { window.__calls.push('play'); this.state = YT.PlayerState.PLAYING },
+      pauseVideo() { window.__calls.push('pause'); this.state = YT.PlayerState.PAUSED },
+      getCurrentTime() { return 0 },
+      getPlayerState() { return this.state },
+    }
+    return 'ok'
+  })()`)
 
   pw(session, ['click', 'a.jump-link.earliest'])
   await wait(300)
-  t.equal(pwEval(session, 'player.seekCalls'), 1)
-  t.equal(pwEval(session, 'player.playCalls'), 1, 'the first plain click starts playback')
+  t.same(pwEval(session, 'window.__calls'), ['seek', 'play'], 'the first plain click, before the player has ever played, starts playback')
 
   pw(session, ['click', 'a.jump-link.best'])
   await wait(300)
-  t.equal(pwEval(session, 'player.seekCalls'), 2)
-  t.equal(pwEval(session, 'player.playCalls'), 1, 'a later plain click only seeks, it does not force play again')
+  t.same(pwEval(session, 'window.__calls'), ['seek', 'play', 'seek'], 'a later click, while the player already plays, only seeks')
+
+  pw(session, ['keydown', 'Space'])
+  pw(session, ['keyup', 'Space'])
+  await wait(300)
+  t.same(
+    pwEval(session, 'window.__calls'),
+    ['seek', 'play', 'seek', 'pause'],
+    'the space bar pauses the playing player',
+  )
+
+  pw(session, ['click', 'a.jump-link.latest'])
+  await wait(300)
+  t.same(
+    pwEval(session, 'window.__calls'),
+    ['seek', 'play', 'seek', 'pause', 'seek'],
+    'a click on a paused player only seeks, it never forces play again, whatever earlier click started playback',
+  )
   t.end()
 })
 

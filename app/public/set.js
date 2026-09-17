@@ -377,7 +377,6 @@ function rowIdOf($el) {
 
 let hoveredRow = null
 let shiftHeld = false
-let hasStartedPlayback = false
 
 function applyShiftHover() {
   $('tr.shift-hover').removeClass('shift-hover')
@@ -446,10 +445,10 @@ $(document).on('click', 'a.jump-link', function (e) {
     return
   }
   if (!player || typeof player.seekTo !== 'function') return
+  const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : YT.PlayerState.UNSTARTED
   player.seekTo(seconds, true)
-  if (!hasStartedPlayback) {
+  if (state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED) {
     player.playVideo()
-    hasStartedPlayback = true
   }
   savePosition(seconds)
 })
