@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 
 const cache = new Map()
 
-const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab']
+const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab', 'was-big']
 
 function storeError(code, message) {
   return Object.assign(new Error(message), { code })
@@ -122,24 +122,38 @@ function applyChange(videoId, mutate) {
   return doc
 }
 
-export function listSets() {
-  const withDecisions = []
-  const mergedOnly = []
+function listMergedVideoIds() {
   const root = join(dataDir(), 'merged')
-  const videoIds = existsSync(root)
+  return existsSync(root)
     ? readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
     : []
+}
+
+function listDecisionVideoIds() {
+  const root = join(dataDir(), 'decisions')
+  return existsSync(root)
+    ? readdirSync(root)
+        .filter((name) => name.endsWith('.json') && !name.endsWith('.prev.json'))
+        .map((name) => name.slice(0, -'.json'.length))
+    : []
+}
+
+export function listSets() {
+  const withDecisions = []
+  const mergedOnly = []
+  const videoIds = [...new Set([...listMergedVideoIds(), ...listDecisionVideoIds()])]
   for (const videoId of videoIds) {
     const doc = peekDecisions(videoId)
     if (doc) {
+      const newestFilename = newestMergedFilename(videoId)
       withDecisions.push({
         videoId,
         rowCount: doc.rows.length,
         decidedCount: doc.rows.filter(isDecided).length,
         mergedFile: doc.mergedFile,
-        hasNewerMerge: newestMergedFilename(videoId) !== doc.mergedFile,
+        hasNewerMerge: newestFilename !== null && newestFilename !== doc.mergedFile,
       })
       continue
     }
@@ -162,6 +176,9 @@ export function getSet(videoId) {
   if (!doc) {
     throw storeError('unknown_video', `no merged results for video id ${videoId}`)
   }
+  if (!existsSync(join(mergedDirFor(videoId), doc.mergedFile))) {
+    throw storeError('missing_merged_file', `the merged file ${doc.mergedFile} for video id ${videoId} is missing`)
+  }
   const merged = readMergedFile(videoId, doc.mergedFile)
   const mergedByUuid = new Map(merged.rows.map((row) => [row.uuid, row]))
   const rows = doc.rows.map((row) => ({
@@ -171,15 +188,52 @@ export function getSet(videoId) {
   return { videoId, mergedFile: doc.mergedFile, params: merged.params, set: doc.set, rows }
 }
 
+const TRACK_TEXT_FIELDS = ['artists', 'title', 'version', 'label']
+const TRACK_BOOL_FIELDS = ['isId', 'isIdVersion', 'stackedWithPrevious']
+
+function validateStart(start) {
+  if (start === null) return
+  if (typeof start !== 'object' || Array.isArray(start)) {
+    throw storeError('invalid_start', 'start must be null or an object')
+  }
+  if (!Number.isFinite(start.seconds) || start.seconds < 0) {
+    throw storeError('invalid_start_seconds', `start.seconds must be a number that is not less than zero, got ${start.seconds}`)
+  }
+  if (!VALID_START_FROM.includes(start.from)) {
+    throw storeError('invalid_start_from', `unknown start from ${start.from}`)
+  }
+}
+
+function validateTrack(track) {
+  if (track === null) return
+  if (typeof track !== 'object' || Array.isArray(track)) {
+    throw storeError('invalid_track', 'track must be null or an object')
+  }
+  for (const field of TRACK_TEXT_FIELDS) {
+    if (field in track && typeof track[field] !== 'string') {
+      throw storeError('invalid_track', `track.${field} must be text`)
+    }
+  }
+  for (const field of TRACK_BOOL_FIELDS) {
+    if (field in track && typeof track[field] !== 'boolean') {
+      throw storeError('invalid_track', `track.${field} must be true or false`)
+    }
+  }
+}
+
+function validateNote(note) {
+  if (typeof note !== 'string') {
+    throw storeError('invalid_note', 'note must be text')
+  }
+}
+
 export function updateRow(videoId, rowId, patch) {
+  if ('start' in patch) validateStart(patch.start)
+  if ('track' in patch) validateTrack(patch.track)
+  if ('note' in patch) validateNote(patch.note)
   return applyChange(videoId, (doc, now) => {
     const row = doc.rows[findRowIndex(doc, rowId)]
-    if ('start' in patch) {
-      if (patch.start !== null && !VALID_START_FROM.includes(patch.start.from)) {
-        throw storeError('invalid_start_from', `unknown start from ${patch.start && patch.start.from}`)
-      }
-      row.start = patch.start
-    }
+    if ('start' in patch) row.start = patch.start
     if ('track' in patch) row.track = patch.track
     if ('note' in patch) row.note = patch.note
     row.updatedAt = now

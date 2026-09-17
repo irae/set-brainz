@@ -15,9 +15,14 @@ function publicDir() {
 const STATUS_BY_CODE = {
   unknown_video: 404,
   unknown_row: 404,
+  missing_merged_file: 404,
   invalid_direction: 400,
   invalid_position: 400,
+  invalid_start: 400,
   invalid_start_from: 400,
+  invalid_start_seconds: 400,
+  invalid_track: 400,
+  invalid_note: 400,
   merge_at_boundary: 400,
 }
 
@@ -65,6 +70,7 @@ export function createApp() {
 
   app.use((err, req, res, next) => {
     const status = STATUS_BY_CODE[err.code] || err.status || err.statusCode || 500
+    console.error(err.message)
     res.status(status).json({ error: status === 500 ? 'internal error' : err.message })
   })
 
