@@ -47,22 +47,35 @@ function variantEvidence(variant) {
   return bits.join(' · ')
 }
 
-function variantLinks(variant) {
-  const q = encodeURIComponent(`${variant.title} ${variant.artist}`)
+function searchLinksHtml(title, artist) {
+  const t = (title || '').trim()
+  const a = (artist || '').trim()
+  if (!t && !a) return ''
+  const q = encodeURIComponent(`${t} ${a}`.trim())
   const links = [
     ['Spotify', `https://open.spotify.com/search/${q}`],
     ['YT Music', `https://music.youtube.com/search?q=${q}`],
   ]
+  return links.map(([name, url]) => `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(name)}</a>`).join(' ')
+}
+
+function variantLinks(variant) {
+  const search = searchLinksHtml(variant.title, variant.artist)
+  const direct = []
   const seen = new Set()
   for (const hit of variant.tracklistify) {
     for (const [key, url] of Object.entries(hit.links || {})) {
       if (!url || key.endsWith('_search') || seen.has(key)) continue
       seen.add(key)
       const label = key.charAt(0).toUpperCase() + key.slice(1)
-      links.push([`${label} ✓`, url])
+      direct.push(`<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(`${label} ✓`)}</a>`)
     }
   }
-  return links.map(([name, url]) => `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(name)}</a>`).join(' ')
+  return [search, ...direct].filter(Boolean).join(' ')
+}
+
+function linksSpan(html) {
+  return html ? `<span class="search-links">${html}</span>` : ''
 }
 
 function jumpLink(seconds, css) {
@@ -115,12 +128,12 @@ function buildEmptyRow(row, index) {
     : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
   const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
   const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
+  const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpHtml}${GRAB_LINK_HTML}${firstRowLink}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
+<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
 ${rowActionsHtml()}</td>
-<td class="alts"></td>
-<td class="small"></td></tr>`
+<td class="alts"></td></tr>`
 }
 
 function buildGapRow(row, index) {
@@ -136,13 +149,13 @@ function buildGapRow(row, index) {
   const minutes = Math.floor(span / 60)
   const secs = span % 60
   const { titleHtml } = trackDisplay(row, 'ID', '')
+  const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}${firstRowLink}
 <div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div></td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b><div class="small">${minutes} min ${secs} s with no match</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}<div class="small">${minutes} min ${secs} s with no match</div>
 ${rowActionsHtml()}</td>
-<td class="alts"></td>
-<td class="small"></td></tr>`
+<td class="alts"></td></tr>`
 }
 
 function buildTrackRow(row, index, lowConfidence) {
@@ -172,16 +185,19 @@ function buildTrackRow(row, index, lowConfidence) {
   const { titleHtml, artistHtml } = trackDisplay(row, guessTitleHtml, `${escapeHtml(primary.artist)}${confSuffix}`)
 
   const altsHtml = alts
-    .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span> <span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
+    .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span>${linksSpan(variantLinks(v))} <span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
     .join('<br>')
+
+  const titleLinksHtml = row.track
+    ? linksSpan(searchLinksHtml(row.track.title, row.track.artists))
+    : linksSpan(variantLinks(primary))
 
   return `<tr class="${cls}${row.track ? ' decided' : ''}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 <div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b><div class="small">${artistHtml}</div><div class="small ev">${variantEvidence(primary)}</div>
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div><div class="small ev">${variantEvidence(primary)}</div>
 ${rowActionsHtml()}</td>
-<td class="alts">${altsHtml}</td>
-<td class="small">${variantLinks(primary)}</td></tr>`
+<td class="alts">${altsHtml}</td></tr>`
 }
 
 function buildRowHtml(row, index, lowConfidence) {

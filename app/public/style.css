@@ -112,14 +112,29 @@ a.jump-link.was-big {
 }
 
 body.shift-down tr:hover .grab-link,
-body.shift-down tr:hover .row-actions,
-tr.shift-hover .grab-link,
-tr.shift-hover .row-actions {
+tr.shift-hover .grab-link {
   display: inline;
+}
+
+body.shift-down tr:hover .row-actions,
+tr.shift-hover .row-actions {
+  display: block;
+  margin-top: 2px;
+  margin-left: 0;
 }
 
 .row-actions a {
   margin-right: 6px;
+}
+
+.search-links {
+  visibility: hidden;
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+tr:hover .search-links {
+  visibility: visible;
 }
 
 .open-dialog {
