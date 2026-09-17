@@ -320,13 +320,18 @@ function loadAndRender() {
     })
 }
 
+function withStatus(text, jqXHR) {
+  const status = jqXHR && jqXHR.status
+  return status ? `${text} (status ${status})` : text
+}
+
 function saveStart(rowId, seconds, from) {
   $.ajax({
     url: apiUrl(rowId),
     method: 'PATCH',
     contentType: 'application/json',
     data: JSON.stringify({ start: { seconds, from } }),
-  }).done(loadAndRender).fail(() => showMessage('Could not save the start. Check the server, then reload the page.'))
+  }).done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not save the start. Check the server, then reload the page.', jqXHR)))
 }
 
 function clearStart(rowId) {
@@ -335,7 +340,7 @@ function clearStart(rowId) {
     method: 'PATCH',
     contentType: 'application/json',
     data: JSON.stringify({ start: null }),
-  }).done(loadAndRender).fail(() => showMessage('Could not clear the start. Check the server, then reload the page.'))
+  }).done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not clear the start. Check the server, then reload the page.', jqXHR)))
 }
 
 function mergeRowApi(rowId, direction) {
@@ -344,7 +349,7 @@ function mergeRowApi(rowId, direction) {
     method: 'POST',
     contentType: 'application/json',
     data: JSON.stringify({ direction }),
-  }).done(loadAndRender).fail(() => showMessage('Could not merge that row.'))
+  }).done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not merge that row.', jqXHR)))
 }
 
 function insertRowApi(rowId, position) {
@@ -353,12 +358,12 @@ function insertRowApi(rowId, position) {
     method: 'POST',
     contentType: 'application/json',
     data: JSON.stringify({ position }),
-  }).done(loadAndRender).fail(() => showMessage('Could not add that row.'))
+  }).done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not add that row.', jqXHR)))
 }
 
 function deleteRowApi(rowId) {
   $.ajax({ url: apiUrl(rowId), method: 'DELETE' })
-    .done(loadAndRender).fail(() => showMessage('Could not delete that row.'))
+    .done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not delete that row.', jqXHR)))
 }
 
 function rowIdOf($el) {
@@ -533,7 +538,7 @@ document.getElementById('track-dialog').addEventListener('close', function () {
     method: 'PATCH',
     contentType: 'application/json',
     data: JSON.stringify({ track, note }),
-  }).done(loadAndRender).fail(() => showMessage('Could not save the track. Check the server, then reload the page.'))
+  }).done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not save the track. Check the server, then reload the page.', jqXHR)))
 })
 
 loadAndRender()
