@@ -7,6 +7,24 @@ function videoIdFromPath() {
 
 const VIDEO_ID = videoIdFromPath()
 const GRAB_LINK_HTML = '<a href="#" class="grab-link">grab</a>'
+const POSITION_KEY = `sb-position:${VIDEO_ID}`
+
+function loadSavedPosition() {
+  try {
+    const raw = localStorage.getItem(POSITION_KEY)
+    if (raw === null) return null
+    const seconds = Number(raw)
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
+  } catch {
+    return null
+  }
+}
+
+function savePosition(seconds) {
+  try {
+    localStorage.setItem(POSITION_KEY, String(Math.max(0, Math.round(seconds))))
+  } catch {}
+}
 
 function showMessage(text) {
   $('.note').remove()
@@ -87,6 +105,20 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
+function rowReady(row) {
+  if (row.start === null || !row.track) return false
+  const track = row.track
+  if (track.isId) return true
+  return !!(track.artists && track.artists.trim() && track.title && track.title.trim())
+}
+
+function rowClasses(row, baseClass) {
+  const classes = [baseClass]
+  if (row.track) classes.push('decided')
+  if (rowReady(row)) classes.push('row-ready')
+  return classes.join(' ')
+}
+
 function trackDisplay(row, guessTitleHtml, guessArtistHtml) {
   if (row.track) {
     return {
@@ -129,7 +161,7 @@ function buildEmptyRow(row, index) {
   const firstRowLink = decided && index === 0 ? `<div class="small">${jumpLink(0, 'was-big')}</div>` : ''
   const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
-  return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
+  return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${jumpHtml}${GRAB_LINK_HTML}${firstRowLink}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
 ${rowActionsHtml()}</td>
@@ -150,7 +182,7 @@ function buildGapRow(row, index) {
   const secs = span % 60
   const { titleHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
-  return `<tr class="row-gap${row.track ? ' decided' : ''}" data-row-id="${row.id}">
+  return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}${firstRowLink}
 <div class="small">${jumpLink(earliest, 'earliest')} — ${jumpLink(latest, 'latest')}</div></td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}<div class="small">${minutes} min ${secs} s with no match</div>
@@ -192,7 +224,7 @@ function buildTrackRow(row, index, lowConfidence) {
     ? linksSpan(searchLinksHtml(row.track.title, row.track.artists))
     : linksSpan(variantLinks(primary))
 
-  return `<tr class="${cls}${row.track ? ' decided' : ''}" data-row-id="${row.id}">
+  return `<tr class="${rowClasses(row, cls)}" data-row-id="${row.id}">
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 <div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}${wasBigLink}</div></td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div><div class="small ev">${variantEvidence(primary)}</div>
@@ -206,8 +238,61 @@ function buildRowHtml(row, index, lowConfidence) {
   return hasTrack ? buildTrackRow(row, index, lowConfidence) : buildGapRow(row, index)
 }
 
+let positionTimer = null
+let restoringPosition = 0
+
+function startPositionTimer() {
+  if (positionTimer) return
+  positionTimer = setInterval(() => {
+    if (player && typeof player.getCurrentTime === 'function') savePosition(player.getCurrentTime())
+  }, 2000)
+}
+
+function stopPositionTimer() {
+  if (!positionTimer) return
+  clearInterval(positionTimer)
+  positionTimer = null
+}
+
+function onPlayerReady() {
+  const saved = loadSavedPosition()
+  if (!saved) return
+  restoringPosition = saved
+  player.mute()
+  player.playVideo()
+  setTimeout(() => {
+    if (!restoringPosition) return
+    restoringPosition = 0
+    if (player && typeof player.unMute === 'function') player.unMute()
+  }, 4000)
+}
+
+function onPlayerStateChange(e) {
+  if (restoringPosition && e.data === YT.PlayerState.PLAYING) {
+    const target = restoringPosition
+    restoringPosition = 0
+    player.seekTo(target, true)
+    player.pauseVideo()
+    player.unMute()
+    return
+  }
+  if (e.data === YT.PlayerState.PLAYING) {
+    startPositionTimer()
+    return
+  }
+  stopPositionTimer()
+  if (e.data === YT.PlayerState.PAUSED && player && typeof player.getCurrentTime === 'function') {
+    savePosition(player.getCurrentTime())
+  }
+}
+
 window.onYouTubeIframeAPIReady = function onYouTubeIframeAPIReady() {
-  player = new YT.Player('yt', { videoId: VIDEO_ID, width: 640, height: 360 })
+  player = new YT.Player('yt', {
+    videoId: VIDEO_ID,
+    width: 640,
+    height: 360,
+    events: { onReady: onPlayerReady, onStateChange: onPlayerStateChange },
+  })
 }
 
 function apiUrl(rowId, suffix) {
@@ -317,16 +402,15 @@ $(document).on('click', 'a.jump-link', function (e) {
     const from = ['earliest', 'best', 'latest', 'was-big'].find((cls) => $el.hasClass(cls))
     if (from) {
       saveStart(rowIdOf($el), seconds, from)
-      return
-    }
-    if ($el.hasClass('big') && $el.hasClass('decided')) {
+    } else if ($el.hasClass('big') && $el.hasClass('decided')) {
       clearStart(rowIdOf($el))
-      return
     }
+    return
   }
   if (!player || typeof player.seekTo !== 'function') return
   player.seekTo(seconds, true)
   player.playVideo()
+  savePosition(seconds)
 })
 
 $(document).on('click', 'a.grab-link', function (e) {

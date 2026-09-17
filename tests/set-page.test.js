@@ -27,8 +27,8 @@ async function startServer(t, dir) {
   return `http://127.0.0.1:${server.address().port}`
 }
 
-function pw(session, args) {
-  execFileSync('playwright-cli', ['cli', '-s', session, ...args], { stdio: 'ignore', timeout: 10000 })
+function pw(session, args, timeout = 10000) {
+  execFileSync('playwright-cli', ['cli', '-s', session, ...args], { stdio: 'ignore', timeout })
 }
 
 function pwEval(session, expr) {
@@ -65,6 +65,10 @@ function shiftClick(session, selector) {
   pw(session, ['keydown', 'Shift'])
   pw(session, ['click', selector])
   pw(session, ['keyup', 'Shift'])
+}
+
+function installSeekSpy(session) {
+  pwEval(session, "(() => { player = { seekCalls: 0, seekTo() { this.seekCalls++ }, playVideo(){}, getCurrentTime(){ return 0 }, getPlayerState(){ return 2 } }; return 'ok' })()")
 }
 
 function wait(ms) {
@@ -140,5 +144,131 @@ test('a decided start can be cleared, and the row then shows its computed times 
   const clearedHtml = pwEval(session, "document.querySelector('a.jump-link.big').outerHTML")
   t.notMatch(clearedHtml, /\bdecided\b/)
   t.match(clearedHtml, /data-t="0"/)
+  t.end()
+})
+
+test('a plain click moves the player, and a shift click on a small timestamp saves a decision without moving it (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO52'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
+  installSeekSpy(session)
+
+  pw(session, ['click', 'a.jump-link.best'])
+  await wait(300)
+  t.equal(pwEval(session, 'player.seekCalls'), 1)
+
+  shiftClick(session, 'a.jump-link.earliest')
+  await waitUntil(async () => {
+    const data = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    return data.rows[0].start !== null
+  })
+
+  const after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  t.match(after.rows[0].start, { from: 'earliest' })
+  t.equal(pwEval(session, 'player.seekCalls'), 1)
+  t.end()
+})
+
+test('the saved position key names its own video, so a second video never clashes (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO53'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
+
+  t.equal(pwEval(session, 'POSITION_KEY'), 'sb-position:TESTVIDEO53')
+  pwEval(session, '(() => { savePosition(77); return "ok" })()')
+  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO53')"), '77')
+
+  pwEval(session, "(() => { localStorage.setItem('sb-position:TESTVIDEO54', '200'); return 'ok' })()")
+  t.equal(pwEval(session, 'loadSavedPosition()'), 77)
+  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO54')"), '200')
+  t.end()
+})
+
+test('on load, a saved position mutes, plays, seeks, pauses and unmutes once; no saved position or a saved zero leaves the player alone (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO57'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+  const base = await startServer(t, dir)
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
+
+  pwEval(session, `(() => {
+    window.__calls = []
+    player = {
+      mute() { window.__calls.push('mute') },
+      unMute() { window.__calls.push('unMute') },
+      playVideo() { window.__calls.push('playVideo') },
+      pauseVideo() { window.__calls.push('pauseVideo') },
+      seekTo(s) { window.__calls.push('seekTo:' + s) },
+      getCurrentTime() { return 0 },
+    }
+    return 'ok'
+  })()`)
+
+  const noneResult = pwEval(session, '(() => { onPlayerReady(); return [...window.__calls] })()')
+  t.same(noneResult, [])
+
+  pwEval(session, "(() => { localStorage.setItem('sb-position:TESTVIDEO57', '0'); window.__calls = []; return 'ok' })()")
+  const zeroResult = pwEval(session, '(() => { onPlayerReady(); return [...window.__calls] })()')
+  t.same(zeroResult, [])
+
+  pwEval(session, "(() => { localStorage.setItem('sb-position:TESTVIDEO57', '55'); window.__calls = []; return 'ok' })()")
+  const snapshot = pwEval(session, `(() => {
+    onPlayerReady()
+    const afterReady = { restoring: restoringPosition, calls: [...window.__calls] }
+    onPlayerStateChange({ data: YT.PlayerState.PLAYING })
+    const afterPlaying = { restoring: restoringPosition, calls: [...window.__calls] }
+    return { afterReady, afterPlaying }
+  })()`)
+
+  t.equal(snapshot.afterReady.restoring, 55)
+  t.same(snapshot.afterReady.calls, ['mute', 'playVideo'])
+
+  t.equal(snapshot.afterPlaying.restoring, 0)
+  t.same(snapshot.afterPlaying.calls, ['mute', 'playVideo', 'seekTo:55', 'pauseVideo', 'unMute'])
+  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO57')"), '55')
+  t.end()
+})
+
+test('a row is coloured ready only when it holds a decided start and a postable track (functional)', { skip: skipReason }, async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const videoId = 'TESTVIDEO55'
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow(), makeMergedRow()] })
+  const base = await startServer(t, dir)
+  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+  const [readyRowId, startOnlyRowId, trackOnlyRowId] = before.rows.map((r) => r.id)
+
+  await fetch(`${base}/api/sets/${videoId}/rows/${readyRowId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ start: { seconds: 5, from: 'best' }, track: { artists: 'Real Artist', title: 'Real Title' } }),
+  })
+  await fetch(`${base}/api/sets/${videoId}/rows/${startOnlyRowId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ start: { seconds: 5, from: 'best' } }),
+  })
+  await fetch(`${base}/api/sets/${videoId}/rows/${trackOnlyRowId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ track: { artists: 'Real Artist', title: 'Real Title' } }),
+  })
+
+  const session = await openPage(t, `${base}/sets/${videoId}`)
+  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 3"))
+
+  const classOf = (rowId) => pwEval(session, `document.querySelector('tr[data-row-id="${rowId}"]').className`)
+  t.match(classOf(readyRowId), /\brow-ready\b/)
+  t.notMatch(classOf(startOnlyRowId), /\brow-ready\b/)
+  t.notMatch(classOf(trackOnlyRowId), /\brow-ready\b/)
   t.end()
 })

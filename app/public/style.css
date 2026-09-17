@@ -57,6 +57,7 @@ tr.row-both { background: #15241a; }
 tr.row-one { background: #24220f; }
 tr.row-weak { background: #2a1a12; }
 tr.row-gap { background: #301515; }
+tr.row-ready { background: #151530; }
 
 .jump {
   white-space: nowrap;
