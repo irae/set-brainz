@@ -78,7 +78,9 @@ export function createApp() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  createApp().listen(8765, '127.0.0.1', () => {
-    console.log('Listening on http://127.0.0.1:8765')
+  const host = process.env.SETBRAINZ_HOST || '0.0.0.0'
+  const port = process.env.SETBRAINZ_PORT || 8765
+  createApp().listen(port, host, () => {
+    console.log(`Listening on http://${host}:${port}`)
   })
 }

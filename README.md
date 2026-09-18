@@ -30,6 +30,8 @@ Scripts, in run order:
 4. `scripts/merge-results.py <video-id>` — merges both runs into `data/merged/<video-id>/<timestamp>-<video-id>.json`, all variants kept.
 5. `npm start` — starts the decisions app on `http://127.0.0.1:8765/`. Open that address, pick the set, and record your decisions there.
 
+By default, the app binds to every address. Set `SETBRAINZ_HOST` to narrow this to one address, for example the loopback address or a Tailscale address, and set `SETBRAINZ_PORT` to change the port. The app has no login, so the network it sits on decides who can use it.
+
 Local data:
 
 All local data lives in `data/`. Third-party tool clones live in `tools/`. Git ignores both folders. No tracked file names a video.
