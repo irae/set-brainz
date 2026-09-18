@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "tap",
+    "test:browser": "tap --timeout=480 tests/set-page.test.js",
     "start": "node app/server.js"
   },
   "dependencies": {
@@ -16,9 +17,10 @@
   },
   "tap": {
     "exclude": [
-      "tests/helpers/**"
+      "tests/helpers/**",
+      "tests/set-page.test.js"
     ],
-    "timeout": 480,
+    "timeout": 30,
     "disable-coverage": true
   }
 }

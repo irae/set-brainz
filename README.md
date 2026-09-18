@@ -20,6 +20,10 @@ Next step: test Tracklistify or SongRec on one set for a baseline, then test Pan
 
 Setup: Node 20 or later, then `npm install` once, in the project root.
 
+`npm test` runs the fast test suite. It skips the browser tests, so it takes about a second.
+
+`npm run test:browser` runs the set page tests in a real headless browser. It takes minutes.
+
 The two set page tests in `tests/set-page.test.js` need the `playwright-cli` tool on `PATH`. Without it, those two tests skip and the rest of the suite still runs.
 
 Scripts, in run order:
