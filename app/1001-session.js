@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 export function readNetscapeCookies(path) {
   const text = readFileSync(path, 'utf8');
@@ -47,4 +47,42 @@ export function writeNetscapeCookies(path, cookies) {
     );
   }
   writeFileSync(path, lines.join('\n') + '\n', 'utf8');
+}
+
+export function readBrowserFingerprint(path) {
+  if (!existsSync(path)) {
+    throw new Error(`Missing browser fingerprint file: ${path}`);
+  }
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+export function contextOptionsFromFingerprint(fingerprint) {
+  const [width, height] = fingerprint.viewport;
+  const [screenWidth, screenHeight] = fingerprint.screen;
+  return {
+    userAgent: fingerprint.ua,
+    locale: fingerprint.lang,
+    extraHTTPHeaders: {
+      'Accept-Language': fingerprint.langs.map((lang, i) => (i === 0 ? lang : `${lang};q=${(0.9 - (i - 1) * 0.1).toFixed(1)}`)).join(','),
+    },
+    viewport: { width, height },
+    screen: { width: screenWidth, height: screenHeight },
+    deviceScaleFactor: fingerprint.dpr,
+    timezoneId: fingerprint.tz,
+    hasTouch: !!fingerprint.touch,
+    isMobile: !!fingerprint.mobile,
+  };
+}
+
+export function loadSession(cookiesPath, fingerprintPath) {
+  if (!existsSync(cookiesPath)) {
+    throw new Error(`Missing 1001Tracklists cookies file: ${cookiesPath}`);
+  }
+  if (!existsSync(fingerprintPath)) {
+    throw new Error(`Missing browser fingerprint file: ${fingerprintPath}`);
+  }
+  return {
+    cookies: readNetscapeCookies(cookiesPath),
+    contextOptions: contextOptionsFromFingerprint(readBrowserFingerprint(fingerprintPath)),
+  };
 }
