@@ -112,16 +112,17 @@ function decidedMark(row) {
 }
 
 function rowReady(row) {
-  if (row.start === null || !row.track) return false
+  if (row.start === null || !row.track || row.posted) return false
   const track = row.track
-  if (track.isId) return true
-  return !!(track.artists && track.artists.trim() && track.title && track.title.trim())
+  if (!(track.artists && track.artists.trim() && track.title && track.title.trim())) return false
+  return !!(track.links && track.links.length)
 }
 
 function rowClasses(row, baseClass) {
   const classes = [baseClass]
   if (row.track) classes.push('decided')
   if (rowReady(row)) classes.push('row-ready')
+  if (row.posted) classes.push('row-posted')
   return classes.join(' ')
 }
 
@@ -135,27 +136,32 @@ function trackDisplay(row, guessTitleHtml, guessArtistHtml) {
   return { titleHtml: guessTitleHtml, artistHtml: guessArtistHtml || '' }
 }
 
-function openDialogSpan(title, artists) {
+function openDialogSpan(title, artists, start) {
   const attrs = artists !== undefined
     ? ` data-artists="${escapeHtml(artists)}" data-title="${escapeHtml(title)}"`
     : ''
-  return `<span class="open-dialog"${attrs}>`
+  const startAttr = start ? ` data-start="${escapeHtml(JSON.stringify(start))}"` : ''
+  return `<span class="open-dialog"${attrs}${startAttr}>`
 }
 
 function ownTitleSpan(row, title, artists) {
   if (row.track) {
-    return `<span class="open-dialog" data-track="${escapeHtml(JSON.stringify(row.track))}" data-note="${escapeHtml(row.note || '')}">`
+    const startAttr = row.start ? ` data-start="${escapeHtml(JSON.stringify(row.start))}"` : ''
+    return `<span class="open-dialog" data-track="${escapeHtml(JSON.stringify(row.track))}" data-note="${escapeHtml(row.note || '')}"${startAttr}>`
   }
-  return openDialogSpan(title, artists)
+  return openDialogSpan(title, artists, row.start)
 }
 
-function rowActionsHtml() {
+function rowActionsHtml(row) {
+  const postHtml = rowReady(row) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
+  const postedHtml = row.posted ? ` <span class="small">posted ${escapeHtml(row.posted.suggestionId)}</span>` : ''
   return '<span class="row-actions">'
     + '<a href="#" class="action-merge-up">merge with above</a> '
     + '<a href="#" class="action-merge-down">merge with below</a> '
     + '<a href="#" class="action-insert-above">add empty above</a> '
     + '<a href="#" class="action-insert-below">add empty below</a> '
     + '<a href="#" class="action-delete">delete row</a>'
+    + postHtml + postedHtml
     + '</span>'
 }
 
@@ -170,7 +176,7 @@ function buildEmptyRow(row, index) {
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${jumpHtml}${GRAB_LINK_HTML}${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
-${rowActionsHtml()}</td>
+${rowActionsHtml(row)}</td>
 <td class="alts"></td></tr>`
 }
 
@@ -194,7 +200,7 @@ function buildGapRow(row, index) {
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}<div class="small">${minutes} min ${secs} s with no match</div>
-${rowActionsHtml()}</td>
+${rowActionsHtml(row)}</td>
 <td class="alts"></td></tr>`
 }
 
@@ -239,7 +245,7 @@ function buildTrackRow(row, index, lowConfidence) {
 <td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div>${evidenceHtml}
-${rowActionsHtml()}</td>
+${rowActionsHtml(row)}</td>
 <td class="alts">${altsHtml}</td></tr>`
 }
 
@@ -376,32 +382,6 @@ function rowIdOf($el) {
   return $el.closest('tr').data('row-id')
 }
 
-let hoveredRow = null
-let shiftHeld = false
-
-function applyShiftHover() {
-  $('tr.shift-hover').removeClass('shift-hover')
-  if (shiftHeld && hoveredRow) hoveredRow.addClass('shift-hover')
-}
-
-$(document).on('keydown', (e) => {
-  if (e.key !== 'Shift') return
-  $('body').addClass('shift-down')
-  shiftHeld = true
-  applyShiftHover()
-})
-$(document).on('keyup', (e) => {
-  if (e.key !== 'Shift') return
-  $('body').removeClass('shift-down')
-  shiftHeld = false
-  applyShiftHover()
-})
-$(window).on('blur', () => {
-  $('body').removeClass('shift-down')
-  shiftHeld = false
-  applyShiftHover()
-})
-
 $(document).on('keydown', (e) => {
   if (e.code !== 'Space' && e.key !== ' ') return
   const dialogEl = document.getElementById('track-dialog')
@@ -422,29 +402,10 @@ $(document).on('keydown', (e) => {
   }
 })
 
-$(document).on('mouseenter mousemove', 'tr', function (e) {
-  hoveredRow = $(this)
-  shiftHeld = e.shiftKey
-  applyShiftHover()
-})
-$(document).on('mouseleave', 'tr', function () {
-  hoveredRow = null
-  applyShiftHover()
-})
-
 $(document).on('click', 'a.jump-link', function (e) {
   e.preventDefault()
   const $el = $(this)
   const seconds = Number($el.data('t'))
-  if (e.shiftKey) {
-    const from = ['earliest', 'best', 'latest'].find((cls) => $el.hasClass(cls))
-    if (from) {
-      saveStart(rowIdOf($el), seconds, from)
-    } else if ($el.hasClass('big')) {
-      saveStart(rowIdOf($el), seconds, 'big')
-    }
-    return
-  }
   if (!player || typeof player.seekTo !== 'function') return
   const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : YT.PlayerState.UNSTARTED
   player.seekTo(seconds, true)
@@ -493,11 +454,36 @@ $(document).on('click', '.action-delete', function (e) {
   deleteRowApi(rowIdOf($(this)))
 })
 
+function parseCue(text) {
+  const parts = text.split(':').map((p) => p.trim())
+  if (parts.some((p) => p === '' || !/^\d+$/.test(p))) return null
+  const nums = parts.map(Number)
+  if (nums.length === 1) return nums[0]
+  if (nums.length === 2) return nums[0] * 60 + nums[1]
+  if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2]
+  return null
+}
+
+function linkKindFromUrl(url) {
+  let host
+  try {
+    host = new URL(url).host
+  } catch {
+    return null
+  }
+  if (host === 'open.spotify.com') return 'spotify'
+  if (host === 'music.youtube.com' || host === 'youtube.com' || host === 'www.youtube.com' || host === 'youtu.be') return 'youtubeMusic'
+  if (host === 'music.apple.com') return 'apple'
+  return null
+}
+
 function openDialog(rowId, fields) {
   const dialogEl = document.getElementById('track-dialog')
   dialogEl.returnValue = ''
   dialogEl.dataset.rowId = rowId
   const $dialog = $(dialogEl)
+  $dialog.find('[name=cue]').val(fields.start ? hms(fields.start.seconds) : '')
+  $dialog.find('[name=link]').val((fields.links && fields.links[0] && fields.links[0].url) || '')
   $dialog.find('[name=artists]').val(fields.artists || '')
   $dialog.find('[name=title]').val(fields.title || '')
   $dialog.find('[name=version]').val(fields.version || '')
@@ -513,10 +499,11 @@ $(document).on('click', '.open-dialog', function () {
   const $el = $(this)
   const rowId = rowIdOf($el)
   const track = $el.data('track')
+  const start = $el.data('start') || null
   if (track) {
-    openDialog(rowId, { ...track, note: $el.data('note') })
+    openDialog(rowId, { ...track, note: $el.data('note'), start })
   } else {
-    openDialog(rowId, { artists: $el.data('artists'), title: $el.data('title') })
+    openDialog(rowId, { artists: $el.data('artists'), title: $el.data('title'), start })
   }
 })
 
@@ -528,6 +515,34 @@ document.getElementById('track-dialog').addEventListener('close', function () {
   if (this.returnValue !== 'save') return
   const rowId = this.dataset.rowId
   const $dialog = $(this)
+  const dialogEl = this
+
+  const cueText = $dialog.find('[name=cue]').val().trim()
+  let start
+  if (cueText) {
+    const seconds = parseCue(cueText)
+    if (seconds === null) {
+      showMessage('The cue must be h:mm:ss, mm:ss, or a number of seconds.')
+      dialogEl.showModal()
+      return
+    }
+    start = { seconds, from: 'typed' }
+  }
+
+  const linkText = $dialog.find('[name=link]').val().trim()
+  let links
+  if (linkText) {
+    const kind = linkKindFromUrl(linkText)
+    if (!kind) {
+      showMessage('The link must be a Spotify, YouTube Music, or Apple Music URL.')
+      dialogEl.showModal()
+      return
+    }
+    links = [{ kind, url: linkText }]
+  } else {
+    links = []
+  }
+
   const track = {
     artists: $dialog.find('[name=artists]').val().trim(),
     title: $dialog.find('[name=title]').val().trim(),
@@ -536,14 +551,33 @@ document.getElementById('track-dialog').addEventListener('close', function () {
     isId: $dialog.find('[name=isId]').prop('checked'),
     isIdVersion: $dialog.find('[name=isIdVersion]').prop('checked'),
     stackedWithPrevious: $dialog.find('[name=stackedWithPrevious]').prop('checked'),
+    links,
   }
   const note = $dialog.find('[name=note]').val().trim()
+  const patch = { track, note }
+  if (start) patch.start = start
   $.ajax({
     url: apiUrl(rowId),
     method: 'PATCH',
     contentType: 'application/json',
-    data: JSON.stringify({ track, note }),
+    data: JSON.stringify(patch),
   }).done(loadAndRender).fail((jqXHR) => showMessage(withStatus('Could not save the track. Check the server, then reload the page.', jqXHR)))
+})
+
+$(document).on('click', 'a.post-1001', function (e) {
+  e.preventDefault()
+  const $el = $(this)
+  if ($el.data('posting')) return
+  $el.data('posting', true)
+  $el.text('posting…')
+  const rowId = rowIdOf($el)
+  $.ajax({ url: apiUrl(rowId, '/post-1001'), method: 'POST' })
+    .done(loadAndRender)
+    .fail((jqXHR) => {
+      const message = (jqXHR.responseJSON && jqXHR.responseJSON.error) || 'Could not post that row.'
+      showMessage(withStatus(message, jqXHR))
+      loadAndRender()
+    })
 })
 
 loadAndRender()

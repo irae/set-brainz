@@ -58,6 +58,7 @@ tr.row-one { background: #24220f; }
 tr.row-weak { background: #2a1a12; }
 tr.row-gap { background: #301515; }
 tr.row-ready { background: #151530; }
+tr.row-posted { background: #26384a; }
 
 .jump {
   white-space: nowrap;
@@ -102,28 +103,23 @@ tr.decided {
   color: #6d6;
 }
 
-.grab-link, .row-actions, .undo-link {
-  display: none;
+.grab-link, .undo-link {
   margin-left: 6px;
   font-size: 11px;
+  color: #999;
 }
 
-body.shift-down tr:hover .grab-link,
-tr.shift-hover .grab-link,
-body.shift-down tr:hover .undo-link,
-tr.shift-hover .undo-link {
-  display: inline;
-}
-
-body.shift-down tr:hover .row-actions,
-tr.shift-hover .row-actions {
+.row-actions {
   display: block;
   margin-top: 2px;
   margin-left: 0;
+  font-size: 11px;
+  color: #999;
 }
 
 .row-actions a {
   margin-right: 6px;
+  color: #999;
 }
 
 .search-links {
