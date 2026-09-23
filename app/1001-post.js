@@ -68,7 +68,9 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     await page.screenshot({ path: `${paths.screenshotDir}/${stamp}-${trackNo}-page.png` });
 
-    const signedIn = await page.locator('a:has-text("sign out")').count();
+    const signedIn = await page
+      .locator('[title="sign out" i], [aria-label="sign out" i], a[href*="/dashboard/"]')
+      .count();
     if (signedIn === 0) {
       throw Object.assign(new Error('not_logged_in'), { code: 'not_logged_in' });
     }
