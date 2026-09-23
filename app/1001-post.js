@@ -118,6 +118,12 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
       return m ? m[1] : null;
     });
     log({ event: 'user', user });
+    if (user === null) {
+      throw Object.assign(
+        new Error('could not read the user name from the page'),
+        { code: 'not_logged_in' }
+      );
+    }
 
     const target = chooseTarget(siteRows, trackNo);
     log({ event: 'target', target });
