@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { loadSession, saveSession } from './1001-session.js';
 
@@ -63,6 +64,7 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     log({ event: 'open', tracklistUrl });
 
     await page.goto(tracklistUrl, { waitUntil: 'domcontentloaded' });
+    mkdirSync(paths.screenshotDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     await page.screenshot({ path: `${paths.screenshotDir}/${stamp}-${trackNo}-page.png` });
 
@@ -72,7 +74,7 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     }
     const bodyText = await page.textContent('body');
     const title = await page.title();
-    if (/just a moment|challenge|attention required/i.test(`${title} ${bodyText}`)) {
+    if (/just a moment|attention required/i.test(title) || /cf-challenge|verify you are human/i.test(bodyText)) {
       throw Object.assign(new Error('challenge_page'), { code: 'challenge_page' });
     }
     log({ event: 'login' });
