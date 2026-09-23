@@ -1,8 +1,10 @@
 import express from 'express'
+import { existsSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow } from './store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, isReadyToPost } from './store.js'
+import { postRow as realPostRow } from './1001-post.js'
 
 const require = createRequire(import.meta.url)
 const defaultPublicDir = join(dirname(fileURLToPath(import.meta.url)), 'public')
@@ -10,6 +12,10 @@ const jqueryPath = require.resolve('jquery/dist/jquery.js')
 
 function publicDir() {
   return process.env.SETBRAINZ_PUBLIC_DIR || defaultPublicDir
+}
+
+function dataDir() {
+  return process.env.SETBRAINZ_DATA_DIR || 'data'
 }
 
 const STATUS_BY_CODE = {
@@ -24,9 +30,20 @@ const STATUS_BY_CODE = {
   invalid_track: 400,
   invalid_note: 400,
   merge_at_boundary: 400,
+  not_ready: 400,
+  no_tracklist_url: 400,
+  posted_is_read_only: 400,
+  already_posted: 409,
+  position_gap: 400,
+  unsupported_link: 400,
+  not_logged_in: 502,
+  challenge_page: 502,
+  no_site_rows: 502,
+  site_rejected: 502,
+  bad_response: 502,
 }
 
-export function createApp() {
+export function createApp({ postRow = realPostRow } = {}) {
   const app = express()
   const dir = publicDir()
 
@@ -66,12 +83,90 @@ export function createApp() {
     res.json(deleteRow(req.params.videoId, req.params.rowId))
   })
 
+  app.post('/api/sets/:videoId/rows/:rowId/post-1001', async (req, res, next) => {
+    const { videoId, rowId } = req.params
+    try {
+      const set = getSet(videoId)
+      const index = set.rows.findIndex((row) => row.id === rowId)
+      if (index === -1) {
+        throw Object.assign(new Error(`no row ${rowId} for video id ${videoId}`), { code: 'unknown_row' })
+      }
+      const row = set.rows[index]
+
+      if (row.posted) {
+        throw Object.assign(new Error(`row ${rowId} for video id ${videoId} is already posted`), { code: 'already_posted' })
+      }
+      if (!isReadyToPost(row)) {
+        let missing
+        if (!row.start) missing = 'cue'
+        else if (!row.track || !row.track.artists?.trim()) missing = 'artists'
+        else if (!row.track.title?.trim()) missing = 'title'
+        else missing = 'link'
+        throw Object.assign(new Error(`row is not ready to post: missing ${missing}`), { code: 'not_ready' })
+      }
+
+      const tracklistsPath = join(dataDir(), '1001', 'tracklists.json')
+      const tracklistMap = existsSync(tracklistsPath) ? JSON.parse(readFileSync(tracklistsPath, 'utf8')) : {}
+      const tracklistUrl = tracklistMap[videoId]
+      if (!tracklistUrl) {
+        throw Object.assign(
+          new Error(`no tracklist url for ${videoId}, add it to ${tracklistsPath}`),
+          { code: 'no_tracklist_url' },
+        )
+      }
+
+      const before = set.rows.slice(0, index)
+      const postedNonIdCount = before.filter((r) => r.start && r.track && !r.track.isId && r.posted).length
+      const idWithStartCount = before.filter((r) => r.track?.isId && r.start).length
+      const trackNo = postedNonIdCount + idWithStartCount
+
+      const logDir = join(dataDir(), '1001')
+      const logPath = join(logDir, 'post-log.jsonl')
+      function log(entry) {
+        mkdirSync(logDir, { recursive: true })
+        appendFileSync(logPath, JSON.stringify({ at: new Date().toISOString(), videoId, rowId, trackNo, ...entry }) + '\n')
+      }
+
+      const paths = {
+        cookies: join(dataDir(), 'cookies', '1001.cookies.txt'),
+        fingerprint: join(dataDir(), '1001', 'browser.json'),
+        screenshotDir: join(dataDir(), '1001', 'posts'),
+      }
+
+      const result = await postRow({
+        tracklistUrl,
+        track: row.track,
+        cueSeconds: row.start.seconds,
+        trackNo,
+        link: row.track.links[0],
+        paths,
+        log,
+      })
+
+      res.json(
+        markPosted(videoId, rowId, {
+          at: new Date().toISOString(),
+          suggestionId: result.suggestionId,
+          siteRowId: result.siteRowId,
+          trackNo: result.trackNo,
+          payload: result.payload,
+          response: result.response,
+        }),
+      )
+    } catch (err) {
+      next(err)
+    }
+  })
+
   app.use(express.static(dir))
 
   app.use((err, req, res, next) => {
     const status = STATUS_BY_CODE[err.code] || err.status || err.statusCode || 500
     console.error(err.message)
-    res.status(status).json({ error: status === 500 ? 'internal error' : err.message })
+    res.status(status).json({
+      error: status === 500 ? 'internal error' : err.message,
+      ...(status !== 500 && err.code ? { code: err.code } : {}),
+    })
   })
 
   return app
