@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "jquery": "^3.7.1"
+    "jquery": "^3.7.1",
+    "playwright": "^1.63.0"
   },
   "devDependencies": {
     "tap": "^21.1.0"

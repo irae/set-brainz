@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 export function readNetscapeCookies(path) {
   const text = readFileSync(path, 'utf8');
@@ -72,6 +72,13 @@ export function contextOptionsFromFingerprint(fingerprint) {
     hasTouch: !!fingerprint.touch,
     isMobile: !!fingerprint.mobile,
   };
+}
+
+export function saveSession(cookiesPath, cookies) {
+  if (existsSync(cookiesPath)) {
+    copyFileSync(cookiesPath, `${cookiesPath}.bak`);
+  }
+  writeNetscapeCookies(cookiesPath, cookies);
 }
 
 export function loadSession(cookiesPath, fingerprintPath) {
