@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { loadSession, saveSession } from './1001-session.js';
 
@@ -30,6 +30,12 @@ export function findPendingSuggestion(siteRows, idTLP, user) {
 export function chooseTarget(siteRows, trackNo) {
   const existing = siteRows.find((row) => row.trackNo === trackNo);
   if (existing) {
+    if (existing.state === 'track') {
+      throw Object.assign(
+        new Error(`site row ${trackNo} already holds ${existing.title}`),
+        { code: 'row_taken' }
+      );
+    }
     return { type: 'id', sugType: 0, idTLP: existing.idTLP, trackNo: existing.trackNo, isID: true };
   }
   if (trackNo === siteRows.length) {
@@ -74,6 +80,17 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     await page.screenshot({ path: `${paths.screenshotDir}/${stamp}-${trackNo}-page.png` });
 
+    try {
+      await page.waitForSelector('div.tlpTog[data-trno]', { timeout: 20000 });
+    } catch {
+      const html = await page.content();
+      writeFileSync(`${paths.screenshotDir}/${stamp}-${trackNo}-page.html`, html, 'utf8');
+      throw Object.assign(
+        new Error('no track rows on the page after 20 seconds, see the saved html'),
+        { code: 'no_site_rows' }
+      );
+    }
+
     const signedIn = await page
       .locator('[title="sign out" i], [aria-label="sign out" i], a[href*="/dashboard/"]')
       .count();
@@ -87,11 +104,17 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     }
     log({ event: 'login' });
 
-    const rowsByTrackNo = await page.$$eval('tr[data-trno]', (rows) =>
-      rows.map((row) => ({
-        trackNo: Number(row.getAttribute('data-trno')),
-        idTLP: Number(row.id.split('tlp_')[1]),
-      }))
+    const rowsByTrackNo = await page.$$eval('div.tlpTog[data-trno]', (rows) =>
+      rows.map((row) => {
+        const titleEl = row.querySelector('.trackValue');
+        const title = titleEl ? titleEl.textContent.replace(/\s+/g, ' ').trim() : '';
+        return {
+          trackNo: Number(row.getAttribute('data-trno')),
+          idTLP: Number(row.id.split('tlp_')[1]),
+          title,
+          state: title === 'ID - ID' ? 'id' : 'track',
+        };
+      })
     );
     if (rowsByTrackNo.length === 0) {
       throw Object.assign(new Error('no_site_rows'), { code: 'no_site_rows' });

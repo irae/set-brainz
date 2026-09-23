@@ -42,10 +42,10 @@ test('linkType throws unsupported_link for any other host', (t) => {
   t.end()
 })
 
-test('chooseTarget returns an id target when the row already exists', (t) => {
+test('chooseTarget returns an id target when the row already exists as an ID', (t) => {
   const siteRows = [
-    { idTLP: 111, trackNo: 0 },
-    { idTLP: 222, trackNo: 1 },
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },
+    { idTLP: 222, trackNo: 1, state: 'id', title: 'ID - ID' },
   ]
   const target = chooseTarget(siteRows, 1)
   t.same(target, { type: 'id', sugType: 0, idTLP: 222, trackNo: 1, isID: true })
@@ -54,8 +54,8 @@ test('chooseTarget returns an id target when the row already exists', (t) => {
 
 test('chooseTarget returns an add target for the row right after the last', (t) => {
   const siteRows = [
-    { idTLP: 111, trackNo: 0 },
-    { idTLP: 222, trackNo: 1 },
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },
+    { idTLP: 222, trackNo: 1, state: 'id', title: 'ID - ID' },
   ]
   const target = chooseTarget(siteRows, 2)
   t.same(target, { type: 'add', sugType: 3, idTLP: 222, trackNo: 1, isID: true })
@@ -64,8 +64,8 @@ test('chooseTarget returns an add target for the row right after the last', (t) 
 
 test('chooseTarget throws position_gap when trackNo is too far ahead', (t) => {
   const siteRows = [
-    { idTLP: 111, trackNo: 0 },
-    { idTLP: 222, trackNo: 1 },
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },
+    { idTLP: 222, trackNo: 1, state: 'id', title: 'ID - ID' },
   ]
   t.throws(() => chooseTarget(siteRows, 5), /position_gap/)
   try {
@@ -74,6 +74,21 @@ test('chooseTarget throws position_gap when trackNo is too far ahead', (t) => {
   } catch (err) {
     t.match(err.message, /5/)
     t.match(err.message, /2/)
+  }
+  t.end()
+})
+
+test('chooseTarget throws row_taken when the row already holds a named track', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, state: 'track', title: 'Darco & DvirNuns - Saying Hey!' },
+    { idTLP: 222, trackNo: 1, state: 'id', title: 'ID - ID' },
+  ]
+  try {
+    chooseTarget(siteRows, 0)
+    t.fail('should have thrown')
+  } catch (err) {
+    t.equal(err.code, 'row_taken')
+    t.match(err.message, /site row 0 already holds Darco & DvirNuns - Saying Hey!/)
   }
   t.end()
 })
@@ -133,6 +148,16 @@ test('findPendingSuggestion returns null when the row has no suggestion from tha
 
 test('findPendingSuggestion returns null when the row has no suggestions at all', (t) => {
   const siteRows = [{ idTLP: 111, trackNo: 0, suggestions: [] }]
+  t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
+  t.end()
+})
+
+test('an id row with a pending suggestion by another user does not block chooseTarget or findPendingSuggestion', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID', suggestions: [{ text: 'A - B', user: 'someoneElse' }] },
+  ]
+  const target = chooseTarget(siteRows, 0)
+  t.same(target, { type: 'id', sugType: 0, idTLP: 111, trackNo: 0, isID: true })
   t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
   t.end()
 })
