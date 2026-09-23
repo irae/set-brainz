@@ -34,6 +34,7 @@ const STATUS_BY_CODE = {
   no_tracklist_url: 400,
   posted_is_read_only: 400,
   already_posted: 409,
+  post_in_progress: 409,
   position_gap: 400,
   unsupported_link: 400,
   not_logged_in: 502,
@@ -42,6 +43,8 @@ const STATUS_BY_CODE = {
   site_rejected: 502,
   bad_response: 502,
 }
+
+const postsInFlight = new Set()
 
 export function createApp({ postRow = realPostRow } = {}) {
   const app = express()
@@ -133,15 +136,28 @@ export function createApp({ postRow = realPostRow } = {}) {
         screenshotDir: join(dataDir(), '1001', 'posts'),
       }
 
-      const result = await postRow({
-        tracklistUrl,
-        track: row.track,
-        cueSeconds: row.start.seconds,
-        trackNo,
-        link: row.track.links[0],
-        paths,
-        log,
-      })
+      const inFlightKey = `${videoId}/${rowId}`
+      if (postsInFlight.has(inFlightKey)) {
+        throw Object.assign(
+          new Error(`a post for video id ${videoId} row ${rowId} is already running`),
+          { code: 'post_in_progress' },
+        )
+      }
+      postsInFlight.add(inFlightKey)
+      let result
+      try {
+        result = await postRow({
+          tracklistUrl,
+          track: row.track,
+          cueSeconds: row.start.seconds,
+          trackNo,
+          link: row.track.links[0],
+          paths,
+          log,
+        })
+      } finally {
+        postsInFlight.delete(inFlightKey)
+      }
 
       res.json(
         markPosted(videoId, rowId, {

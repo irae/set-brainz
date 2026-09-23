@@ -480,6 +480,46 @@ test('api post to 1001tracklists (functional)', (t) => {
     t.end()
   })
 
+  t.test('it answers 409 post_in_progress for a second request while the first is still running', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO56'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+    let runCount = 0
+    let releaseFirst
+    const gate = new Promise((resolve) => {
+      releaseFirst = resolve
+    })
+    const fakePostRow = async () => {
+      runCount += 1
+      await gate
+      return {
+        suggestionId: 'sug-1',
+        siteRowId: 42,
+        trackNo: 0,
+        payload: {},
+        response: { success: true },
+      }
+    }
+    const base = await startServer(t, dir, { postRow: fakePostRow })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+    await makeReadyRow(base, videoId, rowId)
+
+    const firstRequest = fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const secondRes = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+    const secondBody = await secondRes.json()
+    releaseFirst()
+    const firstRes = await firstRequest
+
+    t.equal(secondRes.status, 409)
+    t.equal(secondBody.code, 'post_in_progress')
+    t.equal(firstRes.status, 200)
+    t.equal(runCount, 1)
+    t.end()
+  })
+
   t.end()
 })
 
