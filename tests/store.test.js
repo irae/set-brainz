@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile, writeDecisionsFile } from './helpers/fixtures.js'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow } from '../app/store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, isReadyToPost } from '../app/store.js'
 
 function useDataDir(dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
@@ -241,6 +241,136 @@ test('store getSet (functional)', (t) => {
     useDataDir(dir)
 
     t.throws(() => getSet('TESTVIDEONONE'), /TESTVIDEONONE/)
+    t.end()
+  })
+
+  t.end()
+})
+
+test('store 1001Tracklists fields (functional)', (t) => {
+  t.test('updateRow accepts a track with links and the file holds it', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO31'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    await updateRow(videoId, rowId, {
+      track: { artists: 'Fixture Artist', title: 'Fixture Title', links: [{ kind: 'spotify', url: 'https://open.spotify.com/track/x' }] },
+    })
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].track.links, [{ kind: 'spotify', url: 'https://open.spotify.com/track/x' }])
+    t.end()
+  })
+
+  t.test('updateRow rejects a link with an unknown kind', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO32'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { track: { links: [{ kind: 'napster', url: 'https://example.com/x' }] } }),
+      { code: 'invalid_track' },
+    )
+    t.end()
+  })
+
+  t.test('updateRow rejects a link with a non-https url', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO33'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { track: { links: [{ kind: 'spotify', url: 'http://open.spotify.com/track/x' }] } }),
+      { code: 'invalid_track' },
+    )
+    t.end()
+  })
+
+  t.test('updateRow rejects links that is not a list', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO34'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { track: { links: 'https://open.spotify.com/track/x' } }),
+      { code: 'invalid_track' },
+    )
+    t.end()
+  })
+
+  t.test('updateRow rejects a patch that carries posted', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO35'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { posted: { at: NOW, suggestionId: '1', siteRowId: '1', trackNo: 1, payload: {}, response: {} } }),
+      { code: 'posted_is_read_only' },
+    )
+    t.end()
+  })
+
+  t.test('updateRow accepts start with from typed', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO36'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    await updateRow(videoId, rowId, { start: { seconds: 7, from: 'typed' } })
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].start, { seconds: 7, from: 'typed' })
+    t.end()
+  })
+
+  t.test('markPosted writes posted and updatedAt, copies the prev file, and refuses a second call', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO37'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+    const prevFilePath = join(dir, 'decisions', `${videoId}.prev.json`)
+    const posted = { at: NOW, suggestionId: 'sug-1', siteRowId: 'row-1', trackNo: 1, payload: { a: 1 }, response: { ok: true } }
+
+    markPosted(videoId, rowId, posted)
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].posted, posted)
+    t.ok(after.rows[0].updatedAt)
+    t.ok(existsSync(prevFilePath))
+    t.throws(() => markPosted(videoId, rowId, posted), { code: 'already_posted' })
+    t.end()
+  })
+
+  t.test('isReadyToPost', (t) => {
+    const base = decisionRow({
+      start: { seconds: 1, from: 'best' },
+      track: { artists: 'Fixture Artist', title: 'Fixture Title', links: [{ kind: 'spotify', url: 'https://example.com/x' }] },
+    })
+
+    t.equal(isReadyToPost(base), true)
+    t.equal(isReadyToPost({ ...base, track: { ...base.track, links: [] } }), false)
+    t.equal(isReadyToPost({ ...base, track: { ...base.track, links: undefined } }), false)
+    t.equal(isReadyToPost({ ...base, track: { ...base.track, isId: true } }), false)
+    t.equal(isReadyToPost({ ...base, posted: { at: NOW } }), false)
     t.end()
   })
 

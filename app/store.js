@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 
 const cache = new Map()
 
-const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab', 'was-big', 'big']
+const VALID_START_FROM = ['earliest', 'best', 'latest', 'grab', 'was-big', 'big', 'typed']
 
 function storeError(code, message) {
   return Object.assign(new Error(message), { code })
@@ -190,6 +190,7 @@ export function getSet(videoId) {
 
 const TRACK_TEXT_FIELDS = ['artists', 'title', 'version', 'label']
 const TRACK_BOOL_FIELDS = ['isId', 'isIdVersion', 'stackedWithPrevious']
+const VALID_LINK_KINDS = ['spotify', 'youtubeMusic', 'apple', 'url']
 
 function validateStart(start) {
   if (start === null) return
@@ -219,6 +220,19 @@ function validateTrack(track) {
       throw storeError('invalid_track', `track.${field} must be true or false`)
     }
   }
+  if ('links' in track) {
+    if (!Array.isArray(track.links)) {
+      throw storeError('invalid_track', 'track.links must be a list')
+    }
+    for (const link of track.links) {
+      if (!VALID_LINK_KINDS.includes(link.kind)) {
+        throw storeError('invalid_track', `unknown link kind ${link.kind}`)
+      }
+      if (typeof link.url !== 'string' || !link.url.startsWith('https://')) {
+        throw storeError('invalid_track', `link.url must start with https://, got ${link.url}`)
+      }
+    }
+  }
 }
 
 function validateNote(note) {
@@ -228,6 +242,9 @@ function validateNote(note) {
 }
 
 export function updateRow(videoId, rowId, patch) {
+  if ('posted' in patch) {
+    throw storeError('posted_is_read_only', 'a patch may not set posted')
+  }
   if ('start' in patch) validateStart(patch.start)
   if ('track' in patch) validateTrack(patch.track)
   if ('note' in patch) validateNote(patch.note)
@@ -287,4 +304,24 @@ export function deleteRow(videoId, rowId) {
   return applyChange(videoId, (doc) => {
     doc.rows.splice(findRowIndex(doc, rowId), 1)
   })
+}
+
+export function markPosted(videoId, rowId, posted) {
+  return applyChange(videoId, (doc, now) => {
+    const row = doc.rows[findRowIndex(doc, rowId)]
+    if (row.posted) {
+      throw storeError('already_posted', `row ${rowId} for video id ${videoId} is already posted`)
+    }
+    row.posted = posted
+    row.updatedAt = now
+  })
+}
+
+export function isReadyToPost(row) {
+  if (row.start === null || row.track === null) return false
+  if (row.track.isId) return false
+  if (!row.track.artists?.trim() || !row.track.title?.trim()) return false
+  if (!row.track.links || row.track.links.length === 0) return false
+  if (row.posted) return false
+  return true
 }
