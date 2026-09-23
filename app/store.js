@@ -190,7 +190,7 @@ export function getSet(videoId) {
 
 const TRACK_TEXT_FIELDS = ['artists', 'title', 'version', 'label']
 const TRACK_BOOL_FIELDS = ['isId', 'isIdVersion', 'stackedWithPrevious']
-const VALID_LINK_KINDS = ['spotify', 'youtubeMusic', 'apple', 'url']
+const VALID_LINK_KINDS = ['spotify', 'youtubeMusic', 'apple']
 
 function validateStart(start) {
   if (start === null) return
@@ -225,6 +225,9 @@ function validateTrack(track) {
       throw storeError('invalid_track', 'track.links must be a list')
     }
     for (const link of track.links) {
+      if (typeof link !== 'object' || link === null || Array.isArray(link)) {
+        throw storeError('invalid_track', 'each track.links entry must be an object')
+      }
       if (!VALID_LINK_KINDS.includes(link.kind)) {
         throw storeError('invalid_track', `unknown link kind ${link.kind}`)
       }

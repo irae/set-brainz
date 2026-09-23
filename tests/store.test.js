@@ -295,6 +295,21 @@ test('store 1001Tracklists fields (functional)', (t) => {
     t.end()
   })
 
+  t.test('updateRow rejects a links entry that is null', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO38'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { track: { links: [null] } }),
+      { code: 'invalid_track' },
+    )
+    t.end()
+  })
+
   t.test('updateRow rejects links that is not a list', async (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
