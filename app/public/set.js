@@ -28,9 +28,13 @@ function savePosition(seconds) {
 }
 
 function showMessage(text) {
-  $('.note').remove()
-  $('#tracklist').before(`<p class="note">${escapeHtml(text)}</p>`)
+  const $toast = $(`<div class="toast">${escapeHtml(text)}<button type="button" class="toast-close">&times;</button></div>`)
+  $('#toasts').append($toast)
 }
+
+$(document).on('click', '.toast-close', function () {
+  $(this).closest('.toast').remove()
+})
 
 function hms(seconds) {
   const s = Math.max(0, Math.round(seconds))
@@ -321,7 +325,6 @@ function apiUrl(rowId, suffix) {
 function loadAndRender() {
   $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
     .done((data) => {
-      $('.note').remove()
       hoveredRow = null
       const $tbody = $('#tracklist tbody')
       $tbody.empty()
@@ -572,7 +575,11 @@ $(document).on('click', 'a.post-1001', function (e) {
   $el.text('posting…')
   const rowId = rowIdOf($el)
   $.ajax({ url: apiUrl(rowId, '/post-1001'), method: 'POST' })
-    .done(loadAndRender)
+    .done((data) => {
+      const posted = data.rows.find((row) => row.id === rowId)?.posted
+      if (posted) showMessage(`Posted row ${posted.trackNo}, suggestion ${posted.suggestionId}`)
+      loadAndRender()
+    })
     .fail((jqXHR) => {
       const message = (jqXHR.responseJSON && jqXHR.responseJSON.error) || 'Could not post that row.'
       showMessage(withStatus(message, jqXHR))

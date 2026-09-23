@@ -36,9 +36,38 @@ td, th {
   text-align: left;
 }
 
-.note {
-  color: #e88;
-  font-size: 12px;
+#toasts {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  width: 320px;
+  background: #222;
+  color: #eee;
+  padding: 10px 32px 10px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  position: relative;
+}
+
+.toast-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #eee;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
 }
 
 #player {
