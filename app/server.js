@@ -35,6 +35,7 @@ const STATUS_BY_CODE = {
   posted_is_read_only: 400,
   already_posted: 409,
   post_in_progress: 409,
+  already_suggested: 409,
   position_gap: 400,
   unsupported_link: 400,
   not_logged_in: 502,

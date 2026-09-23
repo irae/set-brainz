@@ -21,6 +21,12 @@ export function linkType(url) {
   throw Object.assign(new Error(`unsupported_link: ${host}`), { code: 'unsupported_link' });
 }
 
+export function findPendingSuggestion(siteRows, idTLP, user) {
+  const row = siteRows.find((r) => r.idTLP === idTLP);
+  if (!row || !row.suggestions) return null;
+  return row.suggestions.find((s) => s.user === user) || null;
+}
+
 export function chooseTarget(siteRows, trackNo) {
   const existing = siteRows.find((row) => row.trackNo === trackNo);
   if (existing) {
@@ -81,19 +87,53 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     }
     log({ event: 'login' });
 
-    const siteRows = await page.$$eval('tr[data-trno]', (rows) =>
+    const rowsByTrackNo = await page.$$eval('tr[data-trno]', (rows) =>
       rows.map((row) => ({
         trackNo: Number(row.getAttribute('data-trno')),
         idTLP: Number(row.id.split('tlp_')[1]),
       }))
     );
-    if (siteRows.length === 0) {
+    if (rowsByTrackNo.length === 0) {
       throw Object.assign(new Error('no_site_rows'), { code: 'no_site_rows' });
     }
+    const suggestionsByTLP = await page.$$eval('.sugTog[data-tlp]', (nodes) =>
+      nodes.reduce((map, node) => {
+        const idTLP = Number(node.getAttribute('data-tlp'));
+        const valueEl = node.querySelector('[id$="_value"] .blueTxt');
+        const text = valueEl ? (valueEl.childNodes[0] ? valueEl.childNodes[0].textContent.trim() : '') : '';
+        const userSpan = [...node.querySelectorAll('.wRow span')].find((s) => !s.className);
+        const user = userSpan ? userSpan.textContent.trim() : '';
+        (map[idTLP] || (map[idTLP] = [])).push({ text, user });
+        return map;
+      }, {})
+    );
+    const siteRows = rowsByTrackNo.map((row) => ({
+      ...row,
+      suggestions: suggestionsByTLP[row.idTLP] || [],
+    }));
     log({ event: 'siteRows', siteRows });
+
+    const user = await page.$eval('a[href*="/dashboard/"]', (a) => {
+      const m = /user dashboard for ([^\s(]+)/i.exec(a.getAttribute('title') || '');
+      return m ? m[1] : null;
+    });
+    log({ event: 'user', user });
 
     const target = chooseTarget(siteRows, trackNo);
     log({ event: 'target', target });
+
+    const mine = findPendingSuggestion(siteRows, target.idTLP, user);
+    if (mine) {
+      throw Object.assign(
+        new Error(`already_suggested: ${mine.text}`),
+        { code: 'already_suggested' }
+      );
+    }
+    const targetRow = siteRows.find((r) => r.idTLP === target.idTLP);
+    const others = (targetRow ? targetRow.suggestions : []).filter((s) => s.user !== user);
+    if (others.length) {
+      log({ event: 'otherSuggestion', suggestions: others });
+    }
 
     const payload = buildPayload(target, track, cueSeconds, link, tracklistUrl);
     log({ event: 'payload', payload });

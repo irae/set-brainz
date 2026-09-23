@@ -9,6 +9,7 @@ import {
   linkType,
   chooseTarget,
   buildPayload,
+  findPendingSuggestion,
 } from '../app/1001-post.js'
 
 test('suggestionText joins artist and title without a version', (t) => {
@@ -109,6 +110,36 @@ test('buildPayload reads idTL from the tracklist URL', (t) => {
   t.equal(payload.idTL, '2q9sf971')
   t.equal(payload.cue, 4)
   t.equal(payload.validLinkType, 13)
+  t.end()
+})
+
+test('findPendingSuggestion returns the logged-in user\'s pending suggestion for that row', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, suggestions: [{ text: 'A - B', user: 'telusmcneely' }] },
+    { idTLP: 222, trackNo: 1, suggestions: [] },
+  ]
+  const found = findPendingSuggestion(siteRows, 111, 'telusmcneely')
+  t.same(found, { text: 'A - B', user: 'telusmcneely' })
+  t.end()
+})
+
+test('findPendingSuggestion returns null when the row has no suggestion from that user', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, suggestions: [{ text: 'A - B', user: 'someoneElse' }] },
+  ]
+  t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
+  t.end()
+})
+
+test('findPendingSuggestion returns null when the row has no suggestions at all', (t) => {
+  const siteRows = [{ idTLP: 111, trackNo: 0, suggestions: [] }]
+  t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
+  t.end()
+})
+
+test('findPendingSuggestion returns null when the row id is not on the site', (t) => {
+  const siteRows = [{ idTLP: 111, trackNo: 0, suggestions: [] }]
+  t.equal(findPendingSuggestion(siteRows, 999, 'telusmcneely'), null)
   t.end()
 })
 
