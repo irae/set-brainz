@@ -49,4 +49,21 @@ All local data lives in `data/`. Third-party tool clones live in `tools/`. Git i
 | `data/decisions/` | one decision file per video, holding its rows and tracks |
 | `data/views/<video-id>/` | old generated views, kept on disk, no script writes there now |
 | `data/tmp/` | temporary audio chunks |
+| `data/cookies/1001.cookies.txt` | 1001Tracklists cookies, Netscape format, exported from a logged-in browser |
+| `data/1001/browser.json` | the browser fingerprint the poster copies: user agent, languages, window and screen size, time zone |
+| `data/1001/tracklists.json` | map from video id to the 1001Tracklists tracklist URL of that set |
+| `data/1001/post-log.jsonl` | one JSON line per step of every post attempt |
+| `data/1001/posts/` | screenshots and saved pages from each post attempt |
 | `tools/tracklistify/`, `tools/ripthatset/` | tool clones with their own environments |
+
+Posting to 1001Tracklists:
+
+1. Log in to 1001Tracklists in your browser. Export the cookies of the site with a cookies.txt extension, and save them as `data/cookies/1001.cookies.txt`.
+2. Save the browser fingerprint as `data/1001/browser.json`. It holds `ua`, `lang`, `langs`, `viewport`, `screen`, `dpr`, `tz`, `touch`, and `mobile`.
+3. Add the tracklist of the set to `data/1001/tracklists.json`. The key is the video id and the value is the full tracklist URL:
+
+```json
+{ "<video-id>": "https://www.1001tracklists.com/tracklist/<code>/<name>.html" }
+```
+
+4. In the set page, a ready row shows `post to 1001`. The app has no page to set the URL yet.
