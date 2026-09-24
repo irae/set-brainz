@@ -31,6 +31,7 @@ const STATUS_BY_CODE = {
   invalid_note: 400,
   merge_at_boundary: 400,
   not_ready: 400,
+  id_post_not_implemented: 400,
   no_tracklist_url: 400,
   posted_is_read_only: 400,
   already_posted: 409,
@@ -101,13 +102,14 @@ export function createApp({ postRow = realPostRow } = {}) {
       if (row.posted) {
         throw Object.assign(new Error(`row ${rowId} for video id ${videoId} is already posted`), { code: 'already_posted' })
       }
-      if (!isReadyToPost(row)) {
-        let missing
-        if (!row.start) missing = 'cue'
-        else if (!row.track || !row.track.artists?.trim()) missing = 'artists'
-        else if (!row.track.title?.trim()) missing = 'title'
-        else missing = 'link'
-        throw Object.assign(new Error(`row is not ready to post: missing ${missing}`), { code: 'not_ready' })
+      if (!isReadyToPost(row, row.number)) {
+        const message = row.number === null
+          ? 'the row has no track number: a row above it is not complete'
+          : 'row is not ready to post: missing link'
+        throw Object.assign(new Error(message), { code: 'not_ready' })
+      }
+      if (row.track.isId) {
+        throw Object.assign(new Error('posting an ID row is not built yet'), { code: 'id_post_not_implemented' })
       }
 
       const tracklistsPath = join(dataDir(), '1001', 'tracklists.json')
@@ -120,10 +122,7 @@ export function createApp({ postRow = realPostRow } = {}) {
         )
       }
 
-      const before = set.rows.slice(0, index)
-      const postedNonIdCount = before.filter((r) => r.start && r.track && !r.track.isId && r.posted).length
-      const idWithStartCount = before.filter((r) => r.track?.isId && r.start).length
-      const trackNo = postedNonIdCount + idWithStartCount
+      const trackNo = row.number - 1
 
       const logDir = join(dataDir(), '1001')
       const logPath = join(logDir, 'post-log.jsonl')

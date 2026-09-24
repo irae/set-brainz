@@ -185,6 +185,10 @@ export function getSet(videoId) {
     ...row,
     merged: row.sources.map((uuid) => mergedByUuid.get(uuid)).filter(Boolean),
   }))
+  const numbers = rowNumbers(rows)
+  rows.forEach((row, index) => {
+    row.number = numbers[index]
+  })
   return { videoId, mergedFile: doc.mergedFile, params: merged.params, set: doc.set, rows }
 }
 
@@ -320,11 +324,31 @@ export function markPosted(videoId, rowId, posted) {
   })
 }
 
-export function isReadyToPost(row) {
+function isCompleteRow(row) {
   if (row.start === null || row.track === null) return false
-  if (row.track.isId) return false
-  if (!row.track.artists?.trim() || !row.track.title?.trim()) return false
-  if (!row.track.links || row.track.links.length === 0) return false
+  if (row.track.isId) return true
+  return !!(row.track.artists?.trim() && row.track.title?.trim())
+}
+
+export function rowNumbers(rows) {
+  const numbers = []
+  let count = 0
+  let stopped = false
+  for (const row of rows) {
+    if (!stopped && isCompleteRow(row)) {
+      count += 1
+      numbers.push(count)
+    } else {
+      stopped = true
+      numbers.push(null)
+    }
+  }
+  return numbers
+}
+
+export function isReadyToPost(row, number) {
+  if (number === null || number === undefined) return false
   if (row.posted) return false
-  return true
+  if (row.track.isId) return true
+  return !!(row.track.links && row.track.links.length > 0)
 }

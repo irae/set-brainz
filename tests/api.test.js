@@ -85,6 +85,31 @@ test('api sets (functional)', (t) => {
     t.end()
   })
 
+  t.test('GET /api/sets/:videoId holds a track number on each row', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO59'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow()] })
+    const base = await startServer(t, dir)
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const firstRowId = before.rows[0].id
+    await fetch(`${base}/api/sets/${videoId}/rows/${firstRowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ start: { seconds: 10, from: 'best' } }),
+    })
+    await fetch(`${base}/api/sets/${videoId}/rows/${firstRowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ track: { artists: 'Fixture Artist', title: 'Fixture Title' } }),
+    })
+
+    const after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+
+    t.equal(after.rows[0].number, 1)
+    t.equal(after.rows[1].number, null)
+    t.end()
+  })
+
   t.end()
 })
 
@@ -450,7 +475,7 @@ test('api post to 1001tracklists (functional)', (t) => {
     t.end()
   })
 
-  t.test('it counts posted rows and id rows above as the track number', async (t) => {
+  t.test('it sends trackNo equal to the row number minus one', async (t) => {
     const dir = makeEmptyDataDir(t)
     const videoId = 'TESTVIDEO55'
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow()] })
@@ -477,6 +502,50 @@ test('api post to 1001tracklists (functional)', (t) => {
     await fetch(`${base}/api/sets/${videoId}/rows/${secondRowId}/post-1001`, { method: 'POST' })
 
     t.same(seenTrackNos, [0, 1])
+    t.end()
+  })
+
+  t.test('it answers 400 not_ready for a row after a row that is not complete', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO57'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow()] })
+    const base = await startServer(t, dir, { postRow: async () => { throw new Error('must not be called') } })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const secondRowId = before.rows[1].id
+    await makeReadyRow(base, videoId, secondRowId)
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${secondRowId}/post-1001`, { method: 'POST' })
+    const body = await res.json()
+
+    t.equal(res.status, 400)
+    t.equal(body.code, 'not_ready')
+    t.end()
+  })
+
+  t.test('it answers 400 id_post_not_implemented for an ID row', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO58'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+    const base = await startServer(t, dir, { postRow: async () => { throw new Error('must not be called') } })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ start: { seconds: 10, from: 'best' } }),
+    })
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ track: { isId: true } }),
+    })
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+    const body = await res.json()
+
+    t.equal(res.status, 400)
+    t.equal(body.code, 'id_post_not_implemented')
     t.end()
   })
 

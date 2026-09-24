@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile, writeDecisionsFile } from './helpers/fixtures.js'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, isReadyToPost } from '../app/store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, isReadyToPost, rowNumbers } from '../app/store.js'
 
 function useDataDir(dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
@@ -381,11 +381,25 @@ test('store 1001Tracklists fields (functional)', (t) => {
       track: { artists: 'Fixture Artist', title: 'Fixture Title', links: [{ kind: 'spotify', url: 'https://example.com/x' }] },
     })
 
-    t.equal(isReadyToPost(base), true)
-    t.equal(isReadyToPost({ ...base, track: { ...base.track, links: [] } }), false)
-    t.equal(isReadyToPost({ ...base, track: { ...base.track, links: undefined } }), false)
-    t.equal(isReadyToPost({ ...base, track: { ...base.track, isId: true } }), false)
-    t.equal(isReadyToPost({ ...base, posted: { at: NOW } }), false)
+    t.equal(isReadyToPost(base, 1), true, 'ready with a number and a link')
+    t.equal(isReadyToPost(base, null), false, 'not ready without a number')
+    t.equal(isReadyToPost({ ...base, track: { ...base.track, links: [] } }, 1), false, 'not ready with no link')
+    t.equal(isReadyToPost({ ...base, track: { isId: true } }, 1), true, 'an ID row needs no link')
+    t.equal(isReadyToPost({ ...base, posted: { at: NOW } }, 1), false, 'not ready once posted')
+    t.end()
+  })
+
+  t.test('rowNumbers', (t) => {
+    const complete = (n) => decisionRow({ start: { seconds: n, from: 'best' }, track: { artists: `Artist ${n}`, title: `Title ${n}` } })
+    const incomplete = decisionRow({ start: null, track: null })
+    const idRow = decisionRow({ start: { seconds: 9, from: 'best' }, track: { isId: true } })
+    const noLinkRow = decisionRow({ start: { seconds: 9, from: 'best' }, track: { artists: 'A', title: 'T', links: [] } })
+
+    t.same(rowNumbers([complete(1), complete(2), complete(3)]), [1, 2, 3], 'a run of complete rows counts up')
+    t.same(rowNumbers([complete(1), incomplete, complete(3)]), [1, null, null], 'the walk stops at the first incomplete row')
+    t.same(rowNumbers([idRow]), [1], 'an ID row counts')
+    t.same(rowNumbers([noLinkRow]), [1], 'a row with no link still counts')
+    t.same(rowNumbers([]), [], 'an empty list gives an empty list')
     t.end()
   })
 
