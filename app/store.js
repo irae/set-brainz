@@ -252,6 +252,9 @@ export function updateRow(videoId, rowId, patch) {
   if ('posted' in patch) {
     throw storeError('posted_is_read_only', 'a patch may not set posted')
   }
+  if ('postHistory' in patch) {
+    throw storeError('postHistory_is_read_only', 'a patch may not set postHistory')
+  }
   if ('start' in patch) validateStart(patch.start)
   if ('track' in patch) validateTrack(patch.track)
   if ('note' in patch) validateNote(patch.note)
@@ -320,6 +323,18 @@ export function markPosted(videoId, rowId, posted) {
       throw storeError('already_posted', `row ${rowId} for video id ${videoId} is already posted`)
     }
     row.posted = posted
+    row.updatedAt = now
+  })
+}
+
+export function clearPosted(videoId, rowId) {
+  return applyChange(videoId, (doc, now) => {
+    const row = doc.rows[findRowIndex(doc, rowId)]
+    if (!row.posted) {
+      throw storeError('not_posted', `row ${rowId} for video id ${videoId} is not posted`)
+    }
+    row.postHistory = [...(row.postHistory || []), { ...row.posted, clearedAt: now }]
+    row.posted = null
     row.updatedAt = now
   })
 }

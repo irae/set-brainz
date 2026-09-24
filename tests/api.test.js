@@ -625,6 +625,76 @@ test('api post to 1001tracklists (functional)', (t) => {
     t.end()
   })
 
+  t.test('it stores our own trackNo and the site anchorTrackNo when a post lands after the last site row', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO63'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+    const fakePostRow = async () => ({
+      suggestionId: 'sug-1',
+      siteRowId: 42,
+      trackNo: 5,
+      payload: {},
+      response: { success: true },
+    })
+    const base = await startServer(t, dir, { postRow: fakePostRow })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+    await makeReadyRow(base, videoId, rowId)
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+    const body = await res.json()
+
+    t.equal(res.status, 200)
+    t.equal(body.rows[0].posted.trackNo, 0)
+    t.equal(body.rows[0].posted.anchorTrackNo, 5)
+    t.end()
+  })
+
+  t.test('DELETE post-1001 clears the posted mark so the row can post again', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO64'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+    const fakePostRow = async () => ({
+      suggestionId: 'sug-1',
+      siteRowId: 42,
+      trackNo: 0,
+      payload: {},
+      response: { success: true },
+    })
+    const base = await startServer(t, dir, { postRow: fakePostRow })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+    await makeReadyRow(base, videoId, rowId)
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'DELETE' })
+    const body = await res.json()
+
+    t.equal(res.status, 200)
+    t.notOk(body.rows[0].posted)
+    t.equal(body.rows[0].postHistory.length, 1)
+    t.equal(body.rows[0].postHistory[0].suggestionId, 'sug-1')
+    t.end()
+  })
+
+  t.test('DELETE post-1001 answers 400 not_posted for a row without a post', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO65'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const base = await startServer(t, dir)
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'DELETE' })
+    const body = await res.json()
+
+    t.equal(res.status, 400)
+    t.equal(body.code, 'not_posted')
+    t.end()
+  })
+
   t.end()
 })
 

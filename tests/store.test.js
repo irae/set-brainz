@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile, writeDecisionsFile } from './helpers/fixtures.js'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, isReadyToPost, rowNumbers } from '../app/store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, rowNumbers } from '../app/store.js'
 
 function useDataDir(dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
@@ -372,6 +372,55 @@ test('store 1001Tracklists fields (functional)', (t) => {
     t.ok(after.rows[0].updatedAt)
     t.ok(existsSync(prevFilePath))
     t.throws(() => markPosted(videoId, rowId, posted), { code: 'already_posted' })
+    t.end()
+  })
+
+  t.test('clearPosted moves posted into postHistory with clearedAt, and copies the prev file', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO60'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+    const posted = { at: NOW, suggestionId: 'sug-1', siteRowId: 'row-1', trackNo: 1, anchorTrackNo: 0, payload: { a: 1 }, response: { ok: true } }
+    markPosted(videoId, rowId, posted)
+    const prevFilePath = join(dir, 'decisions', `${videoId}.prev.json`)
+    const prevContentBeforeClear = readFileSync(prevFilePath, 'utf8')
+
+    clearPosted(videoId, rowId)
+    const after = getSet(videoId)
+
+    t.equal(after.rows[0].posted, null)
+    t.equal(after.rows[0].postHistory.length, 1)
+    t.match(after.rows[0].postHistory[0], { ...posted, clearedAt: /.+/ })
+    t.not(readFileSync(prevFilePath, 'utf8'), prevContentBeforeClear)
+    t.end()
+  })
+
+  t.test('clearPosted answers not_posted for a row without posted', (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO61'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(() => clearPosted(videoId, rowId), { code: 'not_posted' })
+    t.end()
+  })
+
+  t.test('updateRow rejects a patch that carries postHistory', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO62'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { postHistory: [] }),
+      { code: 'postHistory_is_read_only' },
+    )
     t.end()
   })
 

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, isReadyToPost } from './store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost } from './store.js'
 import { postRow as realPostRow } from './1001-post.js'
 
 const require = createRequire(import.meta.url)
@@ -34,6 +34,8 @@ const STATUS_BY_CODE = {
   missing_link: 400,
   no_tracklist_url: 400,
   posted_is_read_only: 400,
+  postHistory_is_read_only: 400,
+  not_posted: 400,
   already_posted: 409,
   post_in_progress: 409,
   already_suggested: 409,
@@ -87,6 +89,10 @@ export function createApp({ postRow = realPostRow } = {}) {
 
   app.delete('/api/sets/:videoId/rows/:rowId', (req, res) => {
     res.json(deleteRow(req.params.videoId, req.params.rowId))
+  })
+
+  app.delete('/api/sets/:videoId/rows/:rowId/post-1001', (req, res) => {
+    res.json(clearPosted(req.params.videoId, req.params.rowId))
   })
 
   app.post('/api/sets/:videoId/rows/:rowId/post-1001', async (req, res, next) => {
@@ -161,7 +167,8 @@ export function createApp({ postRow = realPostRow } = {}) {
           at: new Date().toISOString(),
           suggestionId: result.suggestionId,
           siteRowId: result.siteRowId,
-          trackNo: result.trackNo,
+          trackNo,
+          anchorTrackNo: result.trackNo,
           payload: result.payload,
           response: result.response,
         }),

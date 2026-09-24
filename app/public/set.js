@@ -167,7 +167,10 @@ function ownTitleSpan(row, title, artists) {
 
 function rowActionsHtml(row) {
   const postHtml = isReadyToPost(row, row.number) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
-  const postedHtml = row.posted ? ` <span class="small">posted ${escapeHtml(row.posted.suggestionId)}</span>` : ''
+  const rowNumberLabel = row.number === null || row.number === undefined ? '?' : String(row.number).padStart(2, '0')
+  const postedHtml = row.posted
+    ? ` <span class="small">posted ${escapeHtml(row.posted.suggestionId)}</span> <a href="#" class="forget-post" data-number="${rowNumberLabel}">forget post</a>`
+    : ''
   return '<span class="row-actions">'
     + '<a href="#" class="action-merge-up">merge with above</a> '
     + '<a href="#" class="action-merge-down">merge with below</a> '
@@ -593,6 +596,23 @@ $(document).on('click', 'a.post-1001', function (e) {
       const message = (jqXHR.responseJSON && jqXHR.responseJSON.error) || 'Could not post that row.'
       showMessage(withStatus(message, jqXHR))
       loadAndRender()
+    })
+})
+
+$(document).on('click', 'a.forget-post', function (e) {
+  e.preventDefault()
+  const $el = $(this)
+  const rowId = rowIdOf($el)
+  const number = $el.data('number')
+  if (!confirm(`Forget the post of row ${number}? The suggestion on 1001Tracklists stays. Post again only when it is gone from the site.`)) return
+  $.ajax({ url: apiUrl(rowId, '/post-1001'), method: 'DELETE' })
+    .done(() => {
+      loadAndRender()
+      showMessage(`Row ${number}: post forgotten. Check the site before you post again.`)
+    })
+    .fail((jqXHR) => {
+      const message = (jqXHR.responseJSON && jqXHR.responseJSON.error) || 'Could not forget that post.'
+      showMessage(withStatus(message, jqXHR))
     })
 })
 
