@@ -21,10 +21,21 @@ export function linkType(url) {
   throw Object.assign(new Error(`unsupported_link: ${host}`), { code: 'unsupported_link' });
 }
 
-export function findPendingSuggestion(siteRows, idTLP, user) {
-  const row = siteRows.find((r) => r.idTLP === idTLP);
-  if (!row || !row.suggestions) return null;
-  return row.suggestions.find((s) => s.user === user) || null;
+export function findPendingSuggestion(siteRows, target, user, cueSeconds) {
+  if (target.type === 'id' || target.type === 'wrong') {
+    const targetRow = siteRows.find((r) => r.idTLP === target.idTLP);
+    const onTargetRow = targetRow && (targetRow.suggestions || []).find((s) => s.user === user);
+    if (onTargetRow) return onTargetRow;
+  }
+  for (const row of siteRows) {
+    for (const s of row.suggestions || []) {
+      if (s.user !== user) continue;
+      if (s.cue !== null && s.cue !== undefined && Math.abs(s.cue - cueSeconds) <= 20) {
+        return s;
+      }
+    }
+  }
+  return null;
 }
 
 export function chooseTarget(siteRows, trackNo, isIdTrack = false) {
@@ -41,14 +52,8 @@ export function chooseTarget(siteRows, trackNo, isIdTrack = false) {
     }
     return { type: 'id', sugType: 0, idTLP: existing.idTLP, trackNo: existing.trackNo, isID: true };
   }
-  if (trackNo === siteRows.length) {
-    const last = siteRows[siteRows.length - 1];
-    return { type: 'add', sugType: 3, idTLP: last.idTLP, trackNo: last.trackNo, isID: true };
-  }
-  throw Object.assign(
-    new Error(`position_gap: trackNo ${trackNo} is beyond the site's ${siteRows.length} rows`),
-    { code: 'position_gap' }
-  );
+  const last = siteRows[siteRows.length - 1];
+  return { type: 'add', sugType: 3, idTLP: last.idTLP, trackNo: last.trackNo, isID: last.state === 'id' };
 }
 
 export function buildPayload(target, track, cueSeconds, link, tracklistUrl) {
@@ -90,7 +95,7 @@ function conflictMessage(row, cue, cueSeconds) {
   return `site row ${row.trackNo + 1} (${cueLabel(row)}) holds cue ${formatCue(cue)}, ours is ${formatCue(cueSeconds)}. Matching tracks by time is not built yet.`;
 }
 
-export function findTimeConflict(siteRows, target, cueSeconds) {
+export function findTimeConflict(siteRows, target, cueSeconds, user) {
   const targetRow = target.type === 'add' ? null : siteRows.find((row) => row.idTLP === target.idTLP);
   if (targetRow && targetRow.cue !== null && targetRow.cue !== undefined) {
     if (Math.abs(targetRow.cue - cueSeconds) > 20) {
@@ -99,9 +104,10 @@ export function findTimeConflict(siteRows, target, cueSeconds) {
   }
   for (const row of siteRows) {
     if (row === targetRow) continue;
-    const cues = [row.cue, ...(row.suggestions || []).map((s) => s.cue)].filter(
-      (c) => c !== null && c !== undefined
-    );
+    const suggestionCues = (row.suggestions || [])
+      .filter((s) => s.user !== user)
+      .map((s) => s.cue);
+    const cues = [row.cue, ...suggestionCues].filter((c) => c !== null && c !== undefined);
     for (const cue of cues) {
       if (Math.abs(cue - cueSeconds) <= 20) {
         return { message: conflictMessage(row, cue, cueSeconds) };
@@ -208,7 +214,7 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     const target = chooseTarget(siteRows, trackNo, track.isId);
     log({ event: 'target', target });
 
-    const mine = findPendingSuggestion(siteRows, target.idTLP, user);
+    const mine = findPendingSuggestion(siteRows, target, user, cueSeconds);
     if (mine) {
       throw Object.assign(
         new Error(`already_suggested: ${mine.text}`),
@@ -221,7 +227,7 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
       log({ event: 'otherSuggestion', suggestions: others });
     }
 
-    const conflict = findTimeConflict(siteRows, target, cueSeconds);
+    const conflict = findTimeConflict(siteRows, target, cueSeconds, user);
     log({ event: 'timeCheck', conflict });
     if (conflict) {
       throw Object.assign(new Error(conflict.message), { code: 'track_mismatch' });

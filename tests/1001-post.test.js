@@ -63,19 +63,23 @@ test('chooseTarget returns an add target for the row right after the last', (t) 
   t.end()
 })
 
-test('chooseTarget throws position_gap when trackNo is too far ahead', (t) => {
+test('chooseTarget returns the add target on the last site row when trackNo equals the row count', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },
+    { idTLP: 222, trackNo: 1, state: 'track', title: 'A - B' },
+  ]
+  const target = chooseTarget(siteRows, 2)
+  t.same(target, { type: 'add', sugType: 3, idTLP: 222, trackNo: 1, isID: false })
+  t.end()
+})
+
+test('chooseTarget returns the add target on the last site row when trackNo is far ahead', (t) => {
   const siteRows = [
     { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },
     { idTLP: 222, trackNo: 1, state: 'id', title: 'ID - ID' },
   ]
-  t.throws(() => chooseTarget(siteRows, 5), /position_gap/)
-  try {
-    chooseTarget(siteRows, 5)
-    t.fail('should have thrown')
-  } catch (err) {
-    t.match(err.message, /5/)
-    t.match(err.message, /2/)
-  }
+  const target = chooseTarget(siteRows, 5)
+  t.same(target, { type: 'add', sugType: 3, idTLP: 222, trackNo: 1, isID: true })
   t.end()
 })
 
@@ -188,6 +192,16 @@ test('findTimeConflict flags a pending suggestion 15 seconds away on another row
   t.end()
 })
 
+test('findTimeConflict ignores a pending suggestion from the logged-in user', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, title: 'ID - ID', state: 'id', cue: null, suggestions: [{ text: 'A - B', user: 'telusmcneely', cue: 375 }] },
+    { idTLP: 222, trackNo: 1, title: 'ID - ID', state: 'id', cue: null, suggestions: [] },
+  ]
+  const target = { idTLP: 222, trackNo: 1 }
+  t.equal(findTimeConflict(siteRows, target, 360, 'telusmcneely'), null)
+  t.end()
+})
+
 test('findTimeConflict does not flag a pending suggestion 25 seconds away on another row', (t) => {
   const siteRows = [
     { idTLP: 111, trackNo: 0, title: 'ID - ID', state: 'id', cue: null, suggestions: [{ text: 'A - B', user: 'x', cue: 385 }] },
@@ -219,43 +233,77 @@ test('findTimeConflict flags an official cue on the target row that is 40 second
   t.end()
 })
 
-test('findPendingSuggestion returns the logged-in user\'s pending suggestion for that row', (t) => {
+test('findPendingSuggestion returns the logged-in user\'s pending suggestion on the target row for type id', (t) => {
   const siteRows = [
-    { idTLP: 111, trackNo: 0, suggestions: [{ text: 'A - B', user: 'telusmcneely' }] },
+    { idTLP: 111, trackNo: 0, suggestions: [{ text: 'A - B', user: 'telusmcneely', cue: 7 }] },
     { idTLP: 222, trackNo: 1, suggestions: [] },
   ]
-  const found = findPendingSuggestion(siteRows, 111, 'telusmcneely')
-  t.same(found, { text: 'A - B', user: 'telusmcneely' })
+  const target = { type: 'id', idTLP: 111, trackNo: 0 }
+  const found = findPendingSuggestion(siteRows, target, 'telusmcneely', 7)
+  t.same(found, { text: 'A - B', user: 'telusmcneely', cue: 7 })
   t.end()
 })
 
-test('findPendingSuggestion returns null when the row has no suggestion from that user', (t) => {
+test('findPendingSuggestion returns null when no row holds a suggestion from that user near our cue', (t) => {
   const siteRows = [
-    { idTLP: 111, trackNo: 0, suggestions: [{ text: 'A - B', user: 'someoneElse' }] },
+    { idTLP: 111, trackNo: 0, suggestions: [{ text: 'A - B', user: 'someoneElse', cue: 7 }] },
   ]
-  t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
+  const target = { type: 'id', idTLP: 111, trackNo: 0 }
+  t.equal(findPendingSuggestion(siteRows, target, 'telusmcneely', 7), null)
   t.end()
 })
 
-test('findPendingSuggestion returns null when the row has no suggestions at all', (t) => {
+test('findPendingSuggestion returns null when no site row has any suggestions', (t) => {
   const siteRows = [{ idTLP: 111, trackNo: 0, suggestions: [] }]
-  t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
+  const target = { type: 'id', idTLP: 111, trackNo: 0 }
+  t.equal(findPendingSuggestion(siteRows, target, 'telusmcneely', 7), null)
   t.end()
 })
 
 test('an id row with a pending suggestion by another user does not block chooseTarget or findPendingSuggestion', (t) => {
   const siteRows = [
-    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID', suggestions: [{ text: 'A - B', user: 'someoneElse' }] },
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID', suggestions: [{ text: 'A - B', user: 'someoneElse', cue: 7 }] },
   ]
   const target = chooseTarget(siteRows, 0)
   t.same(target, { type: 'id', sugType: 0, idTLP: 111, trackNo: 0, isID: true })
-  t.equal(findPendingSuggestion(siteRows, 111, 'telusmcneely'), null)
+  t.equal(findPendingSuggestion(siteRows, target, 'telusmcneely', 7), null)
   t.end()
 })
 
-test('findPendingSuggestion returns null when the row id is not on the site', (t) => {
+test('findPendingSuggestion returns null when the target row is not on the site and no cue is close', (t) => {
   const siteRows = [{ idTLP: 111, trackNo: 0, suggestions: [] }]
-  t.equal(findPendingSuggestion(siteRows, 999, 'telusmcneely'), null)
+  const target = { type: 'id', idTLP: 999, trackNo: 3 }
+  t.equal(findPendingSuggestion(siteRows, target, 'telusmcneely', 100), null)
+  t.end()
+})
+
+test('the guard blocks an own suggestion 10 seconds away on another site row', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, state: 'id', suggestions: [{ text: 'A - B', user: 'telusmcneely', cue: 350 }] },
+    { idTLP: 222, trackNo: 1, state: 'id', suggestions: [] },
+  ]
+  const target = { type: 'add', idTLP: 222, trackNo: 1 }
+  const mine = findPendingSuggestion(siteRows, target, 'telusmcneely', 360)
+  t.same(mine, { text: 'A - B', user: 'telusmcneely', cue: 350 })
+  t.end()
+})
+
+test('the guard does not block an own suggestion on the anchor row 300 seconds away for an add', (t) => {
+  const siteRows = [
+    { idTLP: 222, trackNo: 1, state: 'id', suggestions: [{ text: 'A - B', user: 'telusmcneely', cue: 60 }] },
+  ]
+  const target = { type: 'add', idTLP: 222, trackNo: 1 }
+  t.equal(findPendingSuggestion(siteRows, target, 'telusmcneely', 360), null)
+  t.end()
+})
+
+test('the guard still blocks an own suggestion on the target row for type id, whatever its cue', (t) => {
+  const siteRows = [
+    { idTLP: 222, trackNo: 1, state: 'id', suggestions: [{ text: 'A - B', user: 'telusmcneely', cue: 60 }] },
+  ]
+  const target = { type: 'id', idTLP: 222, trackNo: 1 }
+  const mine = findPendingSuggestion(siteRows, target, 'telusmcneely', 360)
+  t.same(mine, { text: 'A - B', user: 'telusmcneely', cue: 60 })
   t.end()
 })
 
