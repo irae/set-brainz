@@ -115,23 +115,32 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
-function rowReady(row) {
-  if (row.start === null || !row.track || row.posted) return false
-  const track = row.track
-  if (!(track.artists && track.artists.trim() && track.title && track.title.trim())) return false
-  return !!(track.links && track.links.length)
+function isReadyToPost(row, number) {
+  if (number === null || number === undefined) return false
+  if (row.posted) return false
+  if (row.track.isId) return true
+  return !!(row.track.links && row.track.links.length > 0)
 }
 
 function rowClasses(row, baseClass) {
   const classes = [baseClass]
   if (row.track) classes.push('decided')
-  if (rowReady(row)) classes.push('row-ready')
+  if (row.number !== null && row.number !== undefined) classes.push('row-ready')
   if (row.posted) classes.push('row-posted')
   return classes.join(' ')
 }
 
+function numberHtml(row) {
+  if (row.number === null || row.number === undefined) return ''
+  return `<b class="row-number">${String(row.number).padStart(2, '0')}</b> `
+}
+
 function trackDisplay(row, guessTitleHtml, guessArtistHtml) {
   if (row.track) {
+    if (row.track.isId) {
+      const artists = row.track.artists ? row.track.artists.trim() : ''
+      return { titleHtml: 'ID', artistHtml: escapeHtml(artists || 'ID') }
+    }
     return {
       titleHtml: escapeHtml(row.track.title || 'ID'),
       artistHtml: row.track.artists ? escapeHtml(row.track.artists) : '',
@@ -157,7 +166,7 @@ function ownTitleSpan(row, title, artists) {
 }
 
 function rowActionsHtml(row) {
-  const postHtml = rowReady(row) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
+  const postHtml = (isReadyToPost(row, row.number) && !row.track?.isId) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
   const postedHtml = row.posted ? ` <span class="small">posted ${escapeHtml(row.posted.suggestionId)}</span>` : ''
   return '<span class="row-actions">'
     + '<a href="#" class="action-merge-up">merge with above</a> '
@@ -178,7 +187,7 @@ function buildEmptyRow(row, index) {
   const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
-<td class="jump">${jumpHtml}${GRAB_LINK_HTML}${smallLine}</td>
+<td class="jump">${numberHtml(row)}${jumpHtml}${GRAB_LINK_HTML}${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
 ${rowActionsHtml(row)}</td>
 <td class="alts"></td></tr>`
@@ -201,7 +210,7 @@ function buildGapRow(row, index) {
   const { titleHtml } = trackDisplay(row, 'ID', '')
   const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
-<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
+<td class="jump">${numberHtml(row)}${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}<div class="small">${minutes} min ${secs} s with no match</div>
 ${rowActionsHtml(row)}</td>
@@ -246,7 +255,7 @@ function buildTrackRow(row, index, lowConfidence) {
   const evidenceHtml = row.track ? '' : `<div class="small ev">${variantEvidence(primary)}</div>`
 
   return `<tr class="${rowClasses(row, cls)}" data-row-id="${row.id}">
-<td class="jump">${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
+<td class="jump">${numberHtml(row)}${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
 <td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div>${evidenceHtml}
 ${rowActionsHtml(row)}</td>

@@ -114,6 +114,11 @@ tr.row-posted { background: #26384a; }
   color: #fff;
 }
 
+.row-number {
+  color: #8cf;
+  margin-right: 4px;
+}
+
 a.jump-link.earliest { color: #6af; }
 a.jump-link.best { color: #6d6; }
 a.jump-link.latest { color: #999; }
