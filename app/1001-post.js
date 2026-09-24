@@ -91,14 +91,14 @@ function conflictMessage(row, cue, cueSeconds) {
 }
 
 export function findTimeConflict(siteRows, target, cueSeconds) {
-  const targetRow = siteRows.find((row) => row.idTLP === target.idTLP);
+  const targetRow = target.type === 'add' ? null : siteRows.find((row) => row.idTLP === target.idTLP);
   if (targetRow && targetRow.cue !== null && targetRow.cue !== undefined) {
     if (Math.abs(targetRow.cue - cueSeconds) > 20) {
       return { message: conflictMessage(targetRow, targetRow.cue, cueSeconds) };
     }
   }
   for (const row of siteRows) {
-    if (row.idTLP === target.idTLP) continue;
+    if (row === targetRow) continue;
     const cues = [row.cue, ...(row.suggestions || []).map((s) => s.cue)].filter(
       (c) => c !== null && c !== undefined
     );

@@ -278,3 +278,13 @@ test('saveSession backs up the old cookies file then writes the new one', (t) =>
   t.match(readFileSync(path, 'utf8'), /new/)
   t.end()
 })
+
+test('findTimeConflict counts the last site row when the target adds a row after it', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, title: 'ID - ID', state: 'id', cue: null, suggestions: [{ text: 'A - B', user: 'x', cue: 1000 }] },
+  ]
+  const target = { type: 'add', idTLP: 111, trackNo: 0 }
+  t.ok(findTimeConflict(siteRows, target, 1010))
+  t.equal(findTimeConflict(siteRows, target, 1100), null)
+  t.end()
+})
