@@ -166,7 +166,7 @@ function ownTitleSpan(row, title, artists) {
 }
 
 function rowActionsHtml(row) {
-  const postHtml = (isReadyToPost(row, row.number) && !row.track?.isId) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
+  const postHtml = isReadyToPost(row, row.number) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
   const postedHtml = row.posted ? ` <span class="small">posted ${escapeHtml(row.posted.suggestionId)}</span>` : ''
   return '<span class="row-actions">'
     + '<a href="#" class="action-merge-up">merge with above</a> '

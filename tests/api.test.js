@@ -522,12 +522,23 @@ test('api post to 1001tracklists (functional)', (t) => {
     t.end()
   })
 
-  t.test('it answers 400 id_post_not_implemented for an ID row', async (t) => {
+  t.test('it reaches postRow with no link for an ID row', async (t) => {
     const dir = makeEmptyDataDir(t)
     const videoId = 'TESTVIDEO58'
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
     writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
-    const base = await startServer(t, dir, { postRow: async () => { throw new Error('must not be called') } })
+    let seenLink = 'not set'
+    const fakePostRow = async (args) => {
+      seenLink = args.link
+      return {
+        suggestionId: 'sug-1',
+        siteRowId: 42,
+        trackNo: 0,
+        payload: {},
+        response: { success: true },
+      }
+    }
+    const base = await startServer(t, dir, { postRow: fakePostRow })
     const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
     const rowId = before.rows[0].id
     await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
@@ -542,10 +553,35 @@ test('api post to 1001tracklists (functional)', (t) => {
     })
 
     const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+
+    t.equal(res.status, 200)
+    t.equal(seenLink, undefined)
+    t.end()
+  })
+
+  t.test('it answers 400 for a non-ID row without a link', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO62'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const base = await startServer(t, dir, { postRow: async () => { throw new Error('must not be called') } })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ start: { seconds: 10, from: 'best' } }),
+    })
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ track: { artists: 'Fixture Artist', title: 'Fixture Title' } }),
+    })
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
     const body = await res.json()
 
     t.equal(res.status, 400)
-    t.equal(body.code, 'id_post_not_implemented')
+    t.equal(body.code, 'not_ready')
     t.end()
   })
 

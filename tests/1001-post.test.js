@@ -10,6 +10,7 @@ import {
   chooseTarget,
   buildPayload,
   findPendingSuggestion,
+  findTimeConflict,
 } from '../app/1001-post.js'
 
 test('suggestionText joins artist and title without a version', (t) => {
@@ -125,6 +126,96 @@ test('buildPayload reads idTL from the tracklist URL', (t) => {
   t.equal(payload.idTL, '2q9sf971')
   t.equal(payload.cue, 4)
   t.equal(payload.validLinkType, 13)
+  t.end()
+})
+
+test('chooseTarget returns a wrong-cue target when the row is an ID and ours is an ID too', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },
+  ]
+  const target = chooseTarget(siteRows, 0, true)
+  t.same(target, { type: 'wrong', sugType: 14, idTLP: 111, trackNo: 0, isID: true })
+  t.end()
+})
+
+test('buildPayload for an ID row on an existing ID site row sends the cue-fix keys in order, no link, no suggestionvalue', (t) => {
+  const target = { type: 'wrong', sugType: 14, idTLP: 14375750, trackNo: 0, isID: true }
+  const track = { isId: true, artists: '', title: '', version: '' }
+  const payload = buildPayload(target, track, 7.4, undefined, 'https://www.1001tracklists.com/tracklist/2q9sf971/some-set.html')
+
+  t.same(Object.keys(payload), [
+    'type', 'hasCue', 'isLive', 'idTL', 'idTLP', 'trackNo', 'isID', 'sugType', 'cue',
+  ])
+  t.equal(payload.type, 'wrong')
+  t.equal(payload.sugType, 14)
+  t.equal(payload.cue, 7)
+  t.end()
+})
+
+test('buildPayload for an ID row added right after the last site row sends "ID - ID" and no link', (t) => {
+  const target = { type: 'add', sugType: 3, idTLP: 14375758, trackNo: 8, isID: true }
+  const track = { isId: true, artists: '', title: '', version: '' }
+  const payload = buildPayload(target, track, 985.4, undefined, 'https://www.1001tracklists.com/tracklist/2q9sf971/some-set.html')
+
+  t.same(Object.keys(payload), [
+    'type', 'hasCue', 'isLive', 'idTL', 'idTLP', 'trackNo', 'isID', 'sugType', 'suggestionvalue', 'cue',
+  ])
+  t.equal(payload.suggestionvalue, 'ID - ID')
+  t.equal(payload.cue, 985)
+  t.end()
+})
+
+test('findTimeConflict returns null when no site row and no suggestion holds a cue', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, title: 'ID - ID', state: 'id', cue: null, suggestions: [] },
+    { idTLP: 222, trackNo: 1, title: 'ID - ID', state: 'id', cue: null, suggestions: [{ text: 'A - B', user: 'x', cue: null }] },
+  ]
+  const target = { idTLP: 222, trackNo: 1 }
+  t.equal(findTimeConflict(siteRows, target, 360), null)
+  t.end()
+})
+
+test('findTimeConflict flags a pending suggestion 15 seconds away on another row', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, title: 'ID - ID', state: 'id', cue: null, suggestions: [{ text: 'A - B', user: 'x', cue: 375 }] },
+    { idTLP: 222, trackNo: 1, title: 'ID - ID', state: 'id', cue: null, suggestions: [] },
+  ]
+  const target = { idTLP: 222, trackNo: 1 }
+  const conflict = findTimeConflict(siteRows, target, 360)
+  t.ok(conflict)
+  t.match(conflict.message, /site row 1/)
+  t.match(conflict.message, /Matching tracks by time is not built yet\.$/)
+  t.end()
+})
+
+test('findTimeConflict does not flag a pending suggestion 25 seconds away on another row', (t) => {
+  const siteRows = [
+    { idTLP: 111, trackNo: 0, title: 'ID - ID', state: 'id', cue: null, suggestions: [{ text: 'A - B', user: 'x', cue: 385 }] },
+    { idTLP: 222, trackNo: 1, title: 'ID - ID', state: 'id', cue: null, suggestions: [] },
+  ]
+  const target = { idTLP: 222, trackNo: 1 }
+  t.equal(findTimeConflict(siteRows, target, 360), null)
+  t.end()
+})
+
+test('findTimeConflict does not flag a cue on the target row itself within 20 seconds', (t) => {
+  const siteRows = [
+    { idTLP: 222, trackNo: 1, title: 'ID - ID', state: 'id', cue: 365, suggestions: [] },
+  ]
+  const target = { idTLP: 222, trackNo: 1 }
+  t.equal(findTimeConflict(siteRows, target, 360), null)
+  t.end()
+})
+
+test('findTimeConflict flags an official cue on the target row that is 40 seconds away', (t) => {
+  const siteRows = [
+    { idTLP: 222, trackNo: 1, title: 'Some Track', state: 'track', cue: 400, suggestions: [] },
+  ]
+  const target = { idTLP: 222, trackNo: 1 }
+  const conflict = findTimeConflict(siteRows, target, 360)
+  t.ok(conflict)
+  t.match(conflict.message, /site row 2/)
+  t.match(conflict.message, /Some Track/)
   t.end()
 })
 

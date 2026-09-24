@@ -31,13 +31,14 @@ const STATUS_BY_CODE = {
   invalid_note: 400,
   merge_at_boundary: 400,
   not_ready: 400,
-  id_post_not_implemented: 400,
+  missing_link: 400,
   no_tracklist_url: 400,
   posted_is_read_only: 400,
   already_posted: 409,
   post_in_progress: 409,
   already_suggested: 409,
   row_taken: 409,
+  track_mismatch: 409,
   position_gap: 400,
   unsupported_link: 400,
   not_logged_in: 502,
@@ -108,10 +109,6 @@ export function createApp({ postRow = realPostRow } = {}) {
           : 'row is not ready to post: missing link'
         throw Object.assign(new Error(message), { code: 'not_ready' })
       }
-      if (row.track.isId) {
-        throw Object.assign(new Error('posting an ID row is not built yet'), { code: 'id_post_not_implemented' })
-      }
-
       const tracklistsPath = join(dataDir(), '1001', 'tracklists.json')
       const tracklistMap = existsSync(tracklistsPath) ? JSON.parse(readFileSync(tracklistsPath, 'utf8')) : {}
       const tracklistUrl = tracklistMap[videoId]
@@ -152,7 +149,7 @@ export function createApp({ postRow = realPostRow } = {}) {
           track: row.track,
           cueSeconds: row.start.seconds,
           trackNo,
-          link: row.track.links[0],
+          link: row.track.links && row.track.links[0] ? row.track.links[0] : undefined,
           paths,
           log,
         })

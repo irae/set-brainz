@@ -27,7 +27,7 @@ export function findPendingSuggestion(siteRows, idTLP, user) {
   return row.suggestions.find((s) => s.user === user) || null;
 }
 
-export function chooseTarget(siteRows, trackNo) {
+export function chooseTarget(siteRows, trackNo, isIdTrack = false) {
   const existing = siteRows.find((row) => row.trackNo === trackNo);
   if (existing) {
     if (existing.state === 'track') {
@@ -35,6 +35,9 @@ export function chooseTarget(siteRows, trackNo) {
         new Error(`site row ${trackNo} already holds ${existing.title}`),
         { code: 'row_taken' }
       );
+    }
+    if (isIdTrack) {
+      return { type: 'wrong', sugType: 14, idTLP: existing.idTLP, trackNo: existing.trackNo, isID: true };
     }
     return { type: 'id', sugType: 0, idTLP: existing.idTLP, trackNo: existing.trackNo, isID: true };
   }
@@ -50,7 +53,8 @@ export function chooseTarget(siteRows, trackNo) {
 
 export function buildPayload(target, track, cueSeconds, link, tracklistUrl) {
   const idTL = tracklistUrl.split('/tracklist/')[1].split('/')[0];
-  return {
+  const cue = Math.round(cueSeconds);
+  const base = {
     type: target.type,
     hasCue: '0',
     isLive: 0,
@@ -59,14 +63,58 @@ export function buildPayload(target, track, cueSeconds, link, tracklistUrl) {
     trackNo: target.trackNo,
     isID: target.isID,
     sugType: target.sugType,
-    suggestionvalue: suggestionText(track),
-    cue: Math.round(cueSeconds),
-    validLinkType: linkType(link.url),
-    validLink: link.url,
   };
+  if (target.type === 'wrong') {
+    return { ...base, cue };
+  }
+  const payload = { ...base, suggestionvalue: track.isId ? 'ID - ID' : suggestionText(track), cue };
+  if (!track.isId) {
+    payload.validLinkType = linkType(link.url);
+    payload.validLink = link.url;
+  }
+  return payload;
+}
+
+function cueLabel(row) {
+  return row.state === 'id' ? 'ID' : row.title;
+}
+
+function formatCue(seconds) {
+  const s = Math.round(seconds);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function conflictMessage(row, cue, cueSeconds) {
+  return `site row ${row.trackNo + 1} (${cueLabel(row)}) holds cue ${formatCue(cue)}, ours is ${formatCue(cueSeconds)}. Matching tracks by time is not built yet.`;
+}
+
+export function findTimeConflict(siteRows, target, cueSeconds) {
+  const targetRow = siteRows.find((row) => row.idTLP === target.idTLP);
+  if (targetRow && targetRow.cue !== null && targetRow.cue !== undefined) {
+    if (Math.abs(targetRow.cue - cueSeconds) > 20) {
+      return { message: conflictMessage(targetRow, targetRow.cue, cueSeconds) };
+    }
+  }
+  for (const row of siteRows) {
+    if (row.idTLP === target.idTLP) continue;
+    const cues = [row.cue, ...(row.suggestions || []).map((s) => s.cue)].filter(
+      (c) => c !== null && c !== undefined
+    );
+    for (const cue of cues) {
+      if (Math.abs(cue - cueSeconds) <= 20) {
+        return { message: conflictMessage(row, cue, cueSeconds) };
+      }
+    }
+  }
+  return null;
 }
 
 export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, paths, log }) {
+  if (!track.isId && !link) {
+    throw Object.assign(new Error('missing_link'), { code: 'missing_link' });
+  }
   const session = loadSession(paths.cookies, paths.fingerprint);
   const browser = await chromium.launch({ headless: true });
   try {
@@ -79,6 +127,12 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     mkdirSync(paths.screenshotDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     await page.screenshot({ path: `${paths.screenshotDir}/${stamp}-${trackNo}-page.png` });
+
+    const bodyText = await page.textContent('body');
+    const title = await page.title();
+    if (/just a moment|attention required/i.test(title) || /cf-challenge|verify you are human|real human/i.test(bodyText)) {
+      throw Object.assign(new Error('challenge_page'), { code: 'challenge_page' });
+    }
 
     try {
       await page.waitForSelector('div.tlpTog[data-trno]', { timeout: 20000 });
@@ -97,22 +151,21 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     if (signedIn === 0) {
       throw Object.assign(new Error('not_logged_in'), { code: 'not_logged_in' });
     }
-    const bodyText = await page.textContent('body');
-    const title = await page.title();
-    if (/just a moment|attention required/i.test(title) || /cf-challenge|verify you are human/i.test(bodyText)) {
-      throw Object.assign(new Error('challenge_page'), { code: 'challenge_page' });
-    }
     log({ event: 'login' });
 
     const rowsByTrackNo = await page.$$eval('div.tlpTog[data-trno]', (rows) =>
       rows.map((row) => {
         const titleEl = row.querySelector('.trackValue');
         const title = titleEl ? titleEl.textContent.replace(/\s+/g, ' ').trim() : '';
+        const idTLP = Number(row.id.split('tlp_')[1]);
+        const cueInput = row.querySelector(`#tlp${idTLP}_cue_seconds`);
+        const cueValue = cueInput ? Number(cueInput.value) : null;
         return {
           trackNo: Number(row.getAttribute('data-trno')),
-          idTLP: Number(row.id.split('tlp_')[1]),
+          idTLP,
           title,
           state: title === 'ID - ID' ? 'id' : 'track',
+          cue: cueValue ? cueValue : null,
         };
       })
     );
@@ -126,7 +179,11 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
         const text = valueEl ? (valueEl.childNodes[0] ? valueEl.childNodes[0].textContent.trim() : '') : '';
         const userSpan = [...node.querySelectorAll('.wRow span')].find((s) => !s.className);
         const user = userSpan ? userSpan.textContent.trim() : '';
-        (map[idTLP] || (map[idTLP] = [])).push({ text, user });
+        const playEl = node.querySelector('[id^="tlp_play_sug_"]');
+        const onclick = playEl ? playEl.getAttribute('onclick') || '' : '';
+        const cueMatch = /cue:\s*'(\d+)'/.exec(onclick);
+        const cue = cueMatch ? Number(cueMatch[1]) : null;
+        (map[idTLP] || (map[idTLP] = [])).push({ text, user, cue });
         return map;
       }, {})
     );
@@ -148,7 +205,7 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
       );
     }
 
-    const target = chooseTarget(siteRows, trackNo);
+    const target = chooseTarget(siteRows, trackNo, track.isId);
     log({ event: 'target', target });
 
     const mine = findPendingSuggestion(siteRows, target.idTLP, user);
@@ -162,6 +219,12 @@ export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, 
     const others = (targetRow ? targetRow.suggestions : []).filter((s) => s.user !== user);
     if (others.length) {
       log({ event: 'otherSuggestion', suggestions: others });
+    }
+
+    const conflict = findTimeConflict(siteRows, target, cueSeconds);
+    log({ event: 'timeCheck', conflict });
+    if (conflict) {
+      throw Object.assign(new Error(conflict.message), { code: 'track_mismatch' });
     }
 
     const payload = buildPayload(target, track, cueSeconds, link, tracklistUrl);
