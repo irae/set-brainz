@@ -152,6 +152,17 @@ test('buildPayload reads idTL from the tracklist URL', (t) => {
   t.end()
 })
 
+test('buildPayload for a named ID remix row with no link sends the normal text and no link keys', (t) => {
+  const target = { type: 'id', sugType: 0, idTLP: 14375750, trackNo: 0, isID: true }
+  const track = { artists: 'ID', title: 'Satisfaction (ID Remix)', version: '' }
+  const payload = buildPayload(target, track, 7.4, undefined, 'https://www.1001tracklists.com/tracklist/2q9sf971/some-set.html')
+
+  t.equal(payload.suggestionvalue, 'ID - Satisfaction (ID Remix)')
+  t.notOk('validLinkType' in payload)
+  t.notOk('validLink' in payload)
+  t.end()
+})
+
 test('chooseTarget returns a wrong-cue target when the row is an ID and ours is an ID too', (t) => {
   const siteRows = [
     { idTLP: 111, trackNo: 0, state: 'id', title: 'ID - ID' },

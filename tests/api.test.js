@@ -559,6 +559,43 @@ test('api post to 1001tracklists (functional)', (t) => {
     t.end()
   })
 
+  t.test('it reaches postRow with no link for a named row whose title holds the word ID', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO66'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+    let seenLink = 'not set'
+    const fakePostRow = async (args) => {
+      seenLink = args.link
+      return {
+        suggestionId: 'sug-1',
+        siteRowId: 42,
+        trackNo: 0,
+        payload: {},
+        response: { success: true },
+      }
+    }
+    const base = await startServer(t, dir, { postRow: fakePostRow })
+    const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
+    const rowId = before.rows[0].id
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ start: { seconds: 10, from: 'best' } }),
+    })
+    await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ track: { artists: 'ID', title: 'Satisfaction (ID Remix)' } }),
+    })
+
+    const res = await fetch(`${base}/api/sets/${videoId}/rows/${rowId}/post-1001`, { method: 'POST' })
+
+    t.equal(res.status, 200)
+    t.equal(seenLink, undefined)
+    t.end()
+  })
+
   t.test('it answers 400 for a non-ID row without a link', async (t) => {
     const dir = makeEmptyDataDir(t)
     const videoId = 'TESTVIDEO62'

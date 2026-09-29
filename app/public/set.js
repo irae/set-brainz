@@ -115,10 +115,17 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
+function trackNeedsNoLink(track) {
+  if (track.isId || track.isIdVersion) return true
+  return [track.artists, track.title, track.version].some(
+    (value) => typeof value === 'string' && /\bID\b/.test(value)
+  )
+}
+
 function isReadyToPost(row, number) {
   if (number === null || number === undefined) return false
   if (row.posted) return false
-  if (row.track.isId) return true
+  if (trackNeedsNoLink(row.track)) return true
   return !!(row.track.links && row.track.links.length > 0)
 }
 

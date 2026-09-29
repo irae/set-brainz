@@ -484,6 +484,26 @@ test('store 1001Tracklists fields (functional)', (t) => {
     t.equal(isReadyToPost({ ...base, track: { ...base.track, links: [] } }, 1), false, 'not ready with no link')
     t.equal(isReadyToPost({ ...base, track: { isId: true } }, 1), true, 'an ID row needs no link')
     t.equal(isReadyToPost({ ...base, posted: { at: NOW } }, 1), false, 'not ready once posted')
+    t.equal(
+      isReadyToPost({ ...base, track: { artists: 'ID', title: 'Fixture Title', links: [] } }, 1),
+      true,
+      'a row with artists ID needs no link'
+    )
+    t.equal(
+      isReadyToPost({ ...base, track: { ...base.track, isIdVersion: true, links: [] } }, 1),
+      true,
+      'an isIdVersion row needs no link'
+    )
+    t.equal(
+      isReadyToPost({ ...base, track: { artists: 'Fixture Artist', title: 'Satisfaction (ID Remix)', links: [] } }, 1),
+      true,
+      'a title with the word ID needs no link'
+    )
+    t.equal(
+      isReadyToPost({ ...base, track: { artists: 'Fixture Artist', title: 'Idle Hands', links: [] } }, 1),
+      false,
+      'a title with Idle is not an ID row'
+    )
     t.end()
   })
 

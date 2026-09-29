@@ -372,9 +372,16 @@ export function rowNumbers(rows) {
   return numbers
 }
 
+export function needsNoLink(track) {
+  if (track.isId || track.isIdVersion) return true
+  return [track.artists, track.title, track.version].some(
+    (value) => typeof value === 'string' && /\bID\b/.test(value)
+  )
+}
+
 export function isReadyToPost(row, number) {
   if (number === null || number === undefined) return false
   if (row.posted) return false
-  if (row.track.isId) return true
+  if (needsNoLink(row.track)) return true
   return !!(row.track.links && row.track.links.length > 0)
 }

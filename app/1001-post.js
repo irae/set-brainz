@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { loadSession, saveSession } from './1001-session.js';
+import { needsNoLink } from './store.js';
 
 export function suggestionText(track) {
   const artists = track.artists.trim();
@@ -79,7 +80,7 @@ export function buildPayload(target, track, cueSeconds, link, tracklistUrl) {
     return { ...base, cue };
   }
   const payload = { ...base, suggestionvalue: track.isId ? 'ID - ID' : suggestionText(track), cue };
-  if (!track.isId) {
+  if (link) {
     payload.validLinkType = linkType(link.url);
     payload.validLink = link.url;
   }
@@ -124,7 +125,7 @@ export function findTimeConflict(siteRows, target, cueSeconds, user) {
 }
 
 export async function postRow({ tracklistUrl, track, cueSeconds, trackNo, link, paths, log }) {
-  if (!track.isId && !link) {
+  if (!needsNoLink(track) && !link) {
     throw Object.assign(new Error('missing_link'), { code: 'missing_link' });
   }
   const session = loadSession(paths.cookies, paths.fingerprint);
