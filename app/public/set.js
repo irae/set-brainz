@@ -480,16 +480,19 @@ function parseCue(text) {
 }
 
 function linkKindFromUrl(url) {
-  let host
+  let parsed
   try {
-    host = new URL(url).host
+    parsed = new URL(url)
   } catch {
     return null
   }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  if (!parsed.host) return null
+  const host = parsed.host
   if (host === 'open.spotify.com') return 'spotify'
   if (host === 'music.youtube.com' || host === 'youtube.com' || host === 'www.youtube.com' || host === 'youtu.be') return 'youtubeMusic'
   if (host === 'music.apple.com') return 'apple'
-  return null
+  return 'other'
 }
 
 function openDialog(rowId, fields) {
@@ -549,7 +552,7 @@ document.getElementById('track-dialog').addEventListener('close', function () {
   if (linkText) {
     const kind = linkKindFromUrl(linkText)
     if (!kind) {
-      showMessage('The link must be a Spotify, YouTube Music, or Apple Music URL.')
+      showMessage('The link must be a web address that starts with http:// or https://')
       dialogEl.showModal()
       return
     }

@@ -41,7 +41,6 @@ const STATUS_BY_CODE = {
   already_suggested: 409,
   row_taken: 409,
   track_mismatch: 409,
-  unsupported_link: 400,
   not_logged_in: 502,
   challenge_page: 502,
   no_site_rows: 502,

@@ -280,7 +280,7 @@ test('store 1001Tracklists fields (functional)', (t) => {
     t.end()
   })
 
-  t.test('updateRow rejects a link with a non-https url', async (t) => {
+  t.test('updateRow accepts a Bandcamp or SoundCloud link with kind other', async (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
     const videoId = 'TESTVIDEO33'
@@ -288,8 +288,57 @@ test('store 1001Tracklists fields (functional)', (t) => {
     const before = getSet(videoId)
     const rowId = before.rows[0].id
 
+    await updateRow(videoId, rowId, {
+      track: { artists: 'Fixture Artist', title: 'Fixture Title', links: [{ kind: 'other', url: 'https://soundcloud.com/x/y' }] },
+    })
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].track.links, [{ kind: 'other', url: 'https://soundcloud.com/x/y' }])
+    t.end()
+  })
+
+  t.test('updateRow accepts a link with an http:// url', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO39'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    await updateRow(videoId, rowId, {
+      track: { artists: 'Fixture Artist', title: 'Fixture Title', links: [{ kind: 'other', url: 'http://bandcamp.com/x' }] },
+    })
+    const after = getSet(videoId)
+
+    t.same(after.rows[0].track.links, [{ kind: 'other', url: 'http://bandcamp.com/x' }])
+    t.end()
+  })
+
+  t.test('updateRow rejects a link with an ftp url', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO40'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
     t.throws(
-      () => updateRow(videoId, rowId, { track: { links: [{ kind: 'spotify', url: 'http://open.spotify.com/track/x' }] } }),
+      () => updateRow(videoId, rowId, { track: { links: [{ kind: 'other', url: 'ftp://x' }] } }),
+      { code: 'invalid_track' },
+    )
+    t.end()
+  })
+
+  t.test('updateRow rejects a link with text that is not a url', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO41'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    const rowId = before.rows[0].id
+
+    t.throws(
+      () => updateRow(videoId, rowId, { track: { links: [{ kind: 'other', url: 'not a url' }] } }),
       { code: 'invalid_track' },
     )
     t.end()

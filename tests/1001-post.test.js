@@ -38,8 +38,9 @@ test('linkType maps Spotify and Apple Music hosts to 10', (t) => {
   t.end()
 })
 
-test('linkType throws unsupported_link for any other host', (t) => {
-  t.throws(() => linkType('https://example.com/track'), /unsupported_link/)
+test('linkType maps any other host to 255', (t) => {
+  t.equal(linkType('https://example.com/track'), 255)
+  t.equal(linkType('https://soundcloud.com/x/y'), 255)
   t.end()
 })
 

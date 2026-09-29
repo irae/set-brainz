@@ -194,7 +194,18 @@ export function getSet(videoId) {
 
 const TRACK_TEXT_FIELDS = ['artists', 'title', 'version', 'label']
 const TRACK_BOOL_FIELDS = ['isId', 'isIdVersion', 'stackedWithPrevious']
-const VALID_LINK_KINDS = ['spotify', 'youtubeMusic', 'apple']
+const VALID_LINK_KINDS = ['spotify', 'youtubeMusic', 'apple', 'other']
+
+function isValidLinkUrl(url) {
+  if (typeof url !== 'string') return false
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host !== ''
+}
 
 function validateStart(start) {
   if (start === null) return
@@ -235,8 +246,8 @@ function validateTrack(track) {
       if (!VALID_LINK_KINDS.includes(link.kind)) {
         throw storeError('invalid_track', `unknown link kind ${link.kind}`)
       }
-      if (typeof link.url !== 'string' || !link.url.startsWith('https://')) {
-        throw storeError('invalid_track', `link.url must start with https://, got ${link.url}`)
+      if (!isValidLinkUrl(link.url)) {
+        throw storeError('invalid_track', `link.url must be a web address that starts with http:// or https://, got ${link.url}`)
       }
     }
   }

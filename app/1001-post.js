@@ -18,7 +18,7 @@ export function linkType(url) {
   if (host === 'open.spotify.com' || host === 'music.apple.com') {
     return 10;
   }
-  throw Object.assign(new Error(`unsupported_link: ${host}`), { code: 'unsupported_link' });
+  return 255;
 }
 
 export function findPendingSuggestion(siteRows, target, user, cueSeconds) {
