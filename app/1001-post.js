@@ -11,11 +11,17 @@ export function suggestionText(track) {
 }
 
 export function linkType(url) {
-  const host = new URL(url).hostname.replace(/^www\./, '');
+  const host = new URL(url).hostname.replace(/^(www\.|m\.)/, '');
   if (host === 'youtube.com' || host === 'youtu.be' || host === 'music.youtube.com') {
     return 13;
   }
-  if (host === 'open.spotify.com' || host === 'music.apple.com') {
+  if (
+    host === 'open.spotify.com' ||
+    host === 'music.apple.com' ||
+    host === 'beatport.com' ||
+    host === 'soundcloud.com' ||
+    host === 'tiktok.com'
+  ) {
     return 10;
   }
   return 255;

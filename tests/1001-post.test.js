@@ -38,9 +38,27 @@ test('linkType maps Spotify and Apple Music hosts to 10', (t) => {
   t.end()
 })
 
+test('linkType maps a Beatport host to 10, with or without www', (t) => {
+  t.equal(linkType('https://www.beatport.com/track/x/1'), 10)
+  t.equal(linkType('https://beatport.com/track/x/1'), 10)
+  t.end()
+})
+
+test('linkType maps a SoundCloud host to 10, with or without www', (t) => {
+  t.equal(linkType('https://soundcloud.com/x/y'), 10)
+  t.equal(linkType('https://www.soundcloud.com/x/y'), 10)
+  t.end()
+})
+
+test('linkType maps a TikTok host to 10, with or without www or m', (t) => {
+  t.equal(linkType('https://www.tiktok.com/@x/video/1'), 10)
+  t.equal(linkType('https://tiktok.com/@x/video/1'), 10)
+  t.equal(linkType('https://m.tiktok.com/@x/video/1'), 10)
+  t.end()
+})
+
 test('linkType maps any other host to 255', (t) => {
   t.equal(linkType('https://example.com/track'), 255)
-  t.equal(linkType('https://soundcloud.com/x/y'), 255)
   t.end()
 })
 
