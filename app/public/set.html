@@ -7,9 +7,9 @@
 </head>
 <body>
 <div id="toasts"></div>
-<div id="player"><div id="yt"></div></div>
+<div id="player"><div id="yt"></div><audio id="audio" controls hidden></audio></div>
 <table id="tracklist">
-<thead><tr><th>Jump</th><th>Track</th><th>Alternatives</th></tr></thead>
+<thead><tr><th>Jump</th><th>Track</th><th>Other guesses</th></tr></thead>
 <tbody></tbody>
 </table>
 <dialog id="track-dialog">
@@ -28,10 +28,10 @@
 <button type="button" id="track-cancel">Cancel</button>
 <button type="submit" value="save">Save</button>
 </menu>
+<section id="dialog-guesses" aria-label="Detections in this row range"></section>
 </form>
 </dialog>
 <script src="/vendor/jquery.js"></script>
 <script src="/set.js"></script>
-<script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>

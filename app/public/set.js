@@ -1,4 +1,8 @@
 let player = null
+let audioPlayer = null
+let playerInitialized = false
+let sourceYoutubeId = null
+let rowsById = new Map()
 
 function videoIdFromPath() {
   const parts = location.pathname.split('/')
@@ -79,7 +83,7 @@ function searchLinksHtml(title, artist) {
     ['Spotify', `https://open.spotify.com/search/${q}`],
     ['YT Music', `https://music.youtube.com/search?q=${q}`],
   ]
-  return links.map(([name, url]) => `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(name)}</a>`).join(' ')
+  return links.map(([name, url]) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`).join(' ')
 }
 
 function variantLinks(variant) {
@@ -91,7 +95,7 @@ function variantLinks(variant) {
       if (!url || key.endsWith('_search') || seen.has(key)) continue
       seen.add(key)
       const label = key.charAt(0).toUpperCase() + key.slice(1)
-      direct.push(`<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(`${label} ✓`)}</a>`)
+      direct.push(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(`${label} ✓`)}</a>`)
     }
   }
   return [search, ...direct].filter(Boolean).join(' ')
@@ -115,18 +119,27 @@ function decidedMark(row) {
   return row.track ? '<span class="decided-mark">✓</span>' : ''
 }
 
-function trackNeedsNoLink(track) {
-  if (track.isId || track.isIdVersion) return true
-  return [track.artists, track.title, track.version].some(
-    (value) => typeof value === 'string' && /\bID\b/.test(value)
-  )
+function rangeScoredVariants(row) {
+  return (row.rangeEntries || row.merged)
+    .filter((entry) => entry.kind === 'track')
+    .flatMap((entry) => entry.variants.map((variant) => ({ variant, score: variantScore(variant) })))
+    .sort((a, b) => b.score - a.score)
 }
 
-function isReadyToPost(row, number) {
-  if (number === null || number === undefined) return false
-  if (row.posted) return false
-  if (trackNeedsNoLink(row.track)) return true
-  return !!(row.track.links && row.track.links.length > 0)
+function rangeGuessesHtml(row, omitVariant) {
+  const scored = rangeScoredVariants(row)
+  if (omitVariant) {
+    const primaryIndex = scored.findIndex(({ variant }) => variant === omitVariant
+      || (variant.title === omitVariant.title && variant.artist === omitVariant.artist
+        && variant.start === omitVariant.start && variant.end === omitVariant.end))
+    if (primaryIndex !== -1) scored.splice(primaryIndex, 1)
+  }
+  return scored.slice(0, omitVariant ? 1 : 2).map(({ variant }) => `<div class="guess">${openDialogSpan(variant.title, variant.artist)}${escapeHtml(variant.title)}</span>${variant.artist ? ` <span class="small">${escapeHtml(variant.artist)}</span>` : ''} ${jumpLink(variant.start, 'guess-time')}–${jumpLink(variant.end, 'guess-time')}${linksSpan(variantLinks(variant))}<div class="small">${variantEvidence(variant)}</div></div>`).join('')
+}
+
+function guessCellHtml(row, omitVariant) {
+  const guesses = rangeGuessesHtml(row, omitVariant)
+  return `<td class="guesses">${guesses}</td>`
 }
 
 function rowClasses(row, baseClass) {
@@ -173,7 +186,7 @@ function ownTitleSpan(row, title, artists) {
 }
 
 function rowActionsHtml(row) {
-  const postHtml = isReadyToPost(row, row.number) ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
+  const postHtml = row.postReady ? ' <a href="#" class="post-1001">post to 1001</a>' : ''
   const rowNumberLabel = row.number === null || row.number === undefined ? '?' : String(row.number).padStart(2, '0')
   const postedHtml = row.posted
     ? ` <span class="small">posted ${escapeHtml(row.posted.suggestionId)}</span> <a href="#" class="forget-post" data-number="${rowNumberLabel}">forget post</a>`
@@ -194,13 +207,14 @@ function buildEmptyRow(row, index) {
     ? jumpLink(row.start.seconds, 'big decided')
     : index === 0 ? jumpLink(0, 'big') : '<span class="jump-link big">—</span>'
   const smallLine = decided ? decidedSmallLine(index) : ''
-  const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
-  const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
+  const bestGuess = row.track ? null : rangeScoredVariants(row)[0]?.variant
+  const { titleHtml, artistHtml } = trackDisplay(row, bestGuess ? escapeHtml(bestGuess.title) : 'ID', bestGuess ? escapeHtml(bestGuess.artist) : '')
+  const guessLinksHtml = bestGuess ? linksSpan(variantLinks(bestGuess)) : ''
+  const guessEvidenceHtml = bestGuess ? `<div class="small">${jumpLink(bestGuess.start, 'guess-time')}–${jumpLink(bestGuess.end, 'guess-time')} ${variantEvidence(bestGuess)}</div>` : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${numberHtml(row)}${jumpHtml}${GRAB_LINK_HTML}${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}
-${rowActionsHtml(row)}</td>
-<td class="alts"></td></tr>`
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess?.title, bestGuess?.artist)}${titleHtml}</span></b>${guessLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${guessEvidenceHtml}
+${rowActionsHtml(row)}</td>${guessCellHtml(row, bestGuess)}</tr>`
 }
 
 function buildGapRow(row, index) {
@@ -217,14 +231,15 @@ function buildGapRow(row, index) {
   const span = Math.round(latest - earliest)
   const minutes = Math.floor(span / 60)
   const secs = span % 60
-  const { titleHtml, artistHtml } = trackDisplay(row, 'ID', '')
-  const linksHtml = row.track ? linksSpan(searchLinksHtml(row.track.title, row.track.artists)) : ''
+  const bestGuess = row.track ? null : rangeScoredVariants(row)[0]?.variant
+  const { titleHtml, artistHtml } = trackDisplay(row, bestGuess ? escapeHtml(bestGuess.title) : 'ID', bestGuess ? escapeHtml(bestGuess.artist) : '')
+  const guessLinksHtml = bestGuess ? linksSpan(variantLinks(bestGuess)) : ''
+  const guessEvidenceHtml = bestGuess ? `<div class="small">${jumpLink(bestGuess.start, 'guess-time')}–${jumpLink(bestGuess.end, 'guess-time')} ${variantEvidence(bestGuess)}</div>` : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${numberHtml(row)}${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row)}${titleHtml}</span></b>${linksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}<div class="small">${minutes} min ${secs} s with no match</div>
-${rowActionsHtml(row)}</td>
-<td class="alts"></td></tr>`
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess?.title, bestGuess?.artist)}${titleHtml}</span></b>${guessLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${guessEvidenceHtml}${row.track ? '' : `<div class="small">${minutes} min ${secs} s with no match</div>`}
+${rowActionsHtml(row)}</td>${guessCellHtml(row, bestGuess)}</tr>`
 }
 
 function buildTrackRow(row, index, lowConfidence) {
@@ -233,7 +248,6 @@ function buildTrackRow(row, index, lowConfidence) {
     .flatMap((m) => m.variants.map((v) => ({ v, m, score: variantScore(v) })))
     .sort((a, b) => b.score - a.score)
   const primary = scored[0].v
-  const alts = scored.slice(1).map((s) => s.v)
   const { r, t, conf } = variantStats(primary)
   const weak = (conf !== null && conf < lowConfidence) || (r === 0 && t === 1)
   const cls = weak ? 'row-weak' : (r && t ? 'row-both' : 'row-one')
@@ -249,27 +263,15 @@ function buildTrackRow(row, index, lowConfidence) {
     ? decidedSmallLine(index)
     : `<div class="small">${jumpLink(earliest, 'earliest')} ${jumpLink(best, 'best')} ${jumpLink(latest, 'latest')}</div>`
 
-  const guessTitleHtml = weak
-    ? `ID <small>maybe ${escapeHtml(primary.title)}</small>`
-    : escapeHtml(primary.title)
-  const confSuffix = conf !== null ? ` (${Math.round(conf)}%)` : ''
-  const { titleHtml, artistHtml } = trackDisplay(row, guessTitleHtml, `${escapeHtml(primary.artist)}${confSuffix}`)
-
-  const altsHtml = alts
-    .map((v) => `${openDialogSpan(v.title, v.artist)}${escapeHtml(v.title)}</span>${linksSpan(variantLinks(v))}<br><span class="small">${variantEvidence(v)} · ${hms(v.start)}–${hms(v.end)}</span>`)
-    .join('<br>')
-
-  const titleLinksHtml = row.track
-    ? linksSpan(searchLinksHtml(row.track.title, row.track.artists))
-    : linksSpan(variantLinks(primary))
-  const evidenceHtml = row.track ? '' : `<div class="small ev">${variantEvidence(primary)}</div>`
+  const bestGuess = row.track ? primary : rangeScoredVariants(row)[0]?.variant || primary
+  const { titleHtml, artistHtml } = trackDisplay(row, escapeHtml(bestGuess.title), escapeHtml(bestGuess.artist))
+  const titleLinksHtml = row.track ? '' : linksSpan(variantLinks(bestGuess))
+  const evidenceHtml = row.track ? '' : `<div class="small">${jumpLink(bestGuess.start, 'guess-time')}–${jumpLink(bestGuess.end, 'guess-time')} ${variantEvidence(bestGuess)}</div>`
 
   return `<tr class="${rowClasses(row, cls)}" data-row-id="${row.id}">
 <td class="jump">${numberHtml(row)}${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, primary.title, primary.artist)}${titleHtml}</span></b>${titleLinksHtml}<div class="small">${artistHtml}</div>${evidenceHtml}
-${rowActionsHtml(row)}</td>
-<td class="alts">${altsHtml}</td></tr>`
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess.title, bestGuess.artist)}${titleHtml}</span></b>${titleLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${evidenceHtml}${rowActionsHtml(row)}</td>${guessCellHtml(row, row.track ? null : bestGuess)}</tr>`
 }
 
 function buildRowHtml(row, index, lowConfidence) {
@@ -285,6 +287,7 @@ function startPositionTimer() {
   if (positionTimer) return
   positionTimer = setInterval(() => {
     if (player && typeof player.getCurrentTime === 'function') savePosition(player.getCurrentTime())
+    if (audioPlayer && !audioPlayer.paused) savePosition(audioPlayer.currentTime)
   }, 2000)
 }
 
@@ -330,11 +333,36 @@ function onPlayerStateChange(e) {
 
 window.onYouTubeIframeAPIReady = function onYouTubeIframeAPIReady() {
   player = new YT.Player('yt', {
-    videoId: VIDEO_ID,
+    videoId: sourceYoutubeId,
     width: 640,
     height: 360,
     events: { onReady: onPlayerReady, onStateChange: onPlayerStateChange },
   })
+}
+
+function initializePlayer(youtubeId) {
+  if (playerInitialized) return
+  playerInitialized = true
+  sourceYoutubeId = youtubeId
+  if (youtubeId) {
+    const script = document.createElement('script')
+    script.src = 'https://www.youtube.com/iframe_api'
+    document.head.append(script)
+  } else {
+    audioPlayer = document.getElementById('audio')
+    audioPlayer.hidden = false
+    audioPlayer.src = `/api/sets/${encodeURIComponent(VIDEO_ID)}/audio`
+    audioPlayer.addEventListener('loadedmetadata', () => {
+      const saved = loadSavedPosition()
+      if (saved !== null) audioPlayer.currentTime = saved
+    })
+    audioPlayer.addEventListener('error', () => showMessage('Could not load local audio. Check the download, then reload the page.'))
+    audioPlayer.addEventListener('play', startPositionTimer)
+    audioPlayer.addEventListener('pause', () => {
+      stopPositionTimer()
+      savePosition(audioPlayer.currentTime)
+    })
+  }
 }
 
 function apiUrl(rowId, suffix) {
@@ -345,12 +373,14 @@ function loadAndRender() {
   $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
     .done((data) => {
       hoveredRow = null
+      initializePlayer(data.youtubeId)
+      rowsById = new Map(data.rows.map((row) => [row.id, row]))
       const $tbody = $('#tracklist tbody')
       $tbody.empty()
       data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
     })
-    .fail(() => {
-      showMessage('Could not load this set. Check the server, then reload the page.')
+    .fail((jqXHR) => {
+      showMessage(withStatus('Could not load this set. Check the server, then reload the page.', jqXHR))
     })
 }
 
@@ -412,6 +442,11 @@ $(document).on('keydown', (e) => {
   if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT') return
   if (e.target && e.target.isContentEditable) return
   e.preventDefault()
+  if (audioPlayer) {
+    if (audioPlayer.paused) audioPlayer.play()
+    else audioPlayer.pause()
+    return
+  }
   if (!player || typeof player.getPlayerState !== 'function') return
   if (player.getPlayerState() === YT.PlayerState.PLAYING) {
     player.pauseVideo()
@@ -428,6 +463,13 @@ $(document).on('click', 'a.jump-link', function (e) {
   e.preventDefault()
   const $el = $(this)
   const seconds = Number($el.data('t'))
+  if (audioPlayer) {
+    const wasPaused = audioPlayer.paused
+    audioPlayer.currentTime = seconds
+    if (wasPaused) audioPlayer.play()
+    savePosition(seconds)
+    return
+  }
   if (!player || typeof player.seekTo !== 'function') return
   const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : YT.PlayerState.UNSTARTED
   player.seekTo(seconds, true)
@@ -444,6 +486,14 @@ $(document).on('click', 'a.undo-link', function (e) {
 
 $(document).on('click', 'a.grab-link', function (e) {
   e.preventDefault()
+  if (audioPlayer) {
+    if (!audioPlayer.paused) {
+      showMessage('Pause the player, then grab its time.')
+      return
+    }
+    saveStart(rowIdOf($(this)), audioPlayer.currentTime, 'grab')
+    return
+  }
   if (!player || typeof player.getPlayerState !== 'function') {
     showMessage('The player is not ready.')
     return
@@ -517,8 +567,21 @@ function openDialog(rowId, fields) {
   $dialog.find('[name=isIdVersion]').prop('checked', !!fields.isIdVersion)
   $dialog.find('[name=stackedWithPrevious]').prop('checked', !!fields.stackedWithPrevious)
   $dialog.find('[name=note]').val(fields.note || '')
+  const row = rowsById.get(rowId)
+  const entries = row ? (row.rangeEntries || row.merged) : []
+  const guesses = entries.flatMap((entry) => entry.kind === 'track'
+    ? entry.variants.map((variant) => `<li><button type="button" class="dialog-guess" data-title="${escapeHtml(variant.title)}" data-artists="${escapeHtml(variant.artist)}">${escapeHtml(variant.title)}</button><span class="small">${escapeHtml(variant.artist)} · ${variantEvidence({ tracklistify: variant.tracklistify, ripthatset: variant.ripthatset })} · ${hms(variant.start)}–${hms(variant.end)}</span>${linksSpan(variantLinks(variant))}</li>`)
+    : [`<li><span>Gap</span><span class="small">${hms(entry.earliest)}–${hms(entry.latest)}</span></li>`])
+  $dialog.find('#dialog-guesses').html(guesses.length ? `<h3>Detections in this row range</h3><ul>${guesses.join('')}</ul>` : '')
   dialogEl.showModal()
 }
+
+$(document).on('click', '.dialog-guess', function () {
+  const $guess = $(this)
+  const $dialog = $('#track-dialog')
+  $dialog.find('[name=artists]').val($guess.attr('data-artists') || '')
+  $dialog.find('[name=title]').val($guess.attr('data-title') || '')
+})
 
 $(document).on('click', '.open-dialog', function () {
   const $el = $(this)
