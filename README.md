@@ -26,13 +26,19 @@ Setup: Node 20 or later, then `npm install` once, in the project root.
 
 The two set page tests in `tests/set-page.test.js` need the `playwright-cli` tool on `PATH`. Without it, those two tests skip and the rest of the suite still runs.
 
-Scripts, in run order:
+Quick workflow:
 
-1. `scripts/download-audio.sh <youtube-url>` — audio-only download into `data/audio/<video-id>/`, plus an MP3 copy.
-2. `scripts/install-tracklistify.sh` then `scripts/run-tracklistify.sh <video-id>`.
-3. `scripts/install-ripthatset.sh` then `scripts/run-ripthatset.sh <video-id>`. Run after Tracklistify, not with it.
-4. `scripts/merge-results.py <video-id>` — merges both runs into `data/merged/<video-id>/<timestamp>-<video-id>.json`, all variants kept.
-5. `npm start` — starts the decisions app on `http://127.0.0.1:8765/`. Open that address, pick the set, and record your decisions there.
+1. Run `npm start` and open `http://127.0.0.1:8765/`.
+2. Add a set. Save the source URL, title and optional 1001Tracklists URL.
+3. Open the edit page. Choose Download, then Process. Reload the page to see status.
+4. Open the decisions page after processing completes.
+
+Underlying scripts, in run order:
+
+1. `scripts/download-audio.sh <set-id> <source-url>` — audio-only download into `data/audio/<set-id>/` as an MP3.
+2. `scripts/install-tracklistify.sh` then `scripts/run-tracklistify.sh <set-id>`.
+3. `scripts/install-ripthatset.sh` then `scripts/run-ripthatset.sh <set-id>`. Run after Tracklistify, not with it.
+4. `scripts/merge-results.py <set-id>` — merges both runs into `data/merged/<set-id>/<timestamp>-<set-id>.json`, all variants kept.
 
 By default, the app binds to every address. Set `SETBRAINZ_HOST` to narrow this to one address, for example the loopback address or a Tailscale address, and set `SETBRAINZ_PORT` to change the port. The app has no login, so the network it sits on decides who can use it.
 
@@ -42,10 +48,12 @@ All local data lives in `data/`. Third-party tool clones live in `tools/`. Git i
 
 | Path | Content |
 |---|---|
-| `data/audio/<video-id>/` | downloaded audio and the MP3 copy |
-| `data/runs/<video-id>/tracklistify/` | Tracklistify log and tracklist files |
-| `data/runs/<video-id>/ripthatset/` | RipThatSet log and JSON |
-| `data/merged/<video-id>/` | merged JSON files, one per merge |
+| `data/sets.json` | source URL, title and 1001Tracklists URL for each set |
+| `data/jobs/<set-id>.json` | download and processing status |
+| `data/audio/<set-id>/` | downloaded MP3 audio |
+| `data/runs/<set-id>/tracklistify/` | Tracklistify log and tracklist files |
+| `data/runs/<set-id>/ripthatset/` | RipThatSet log and JSON |
+| `data/merged/<set-id>/` | merged JSON files, one per merge |
 | `data/decisions/` | one decision file per video, holding its rows and tracks |
 | `data/views/<video-id>/` | old generated views, kept on disk, no script writes there now |
 | `data/tmp/` | temporary audio chunks |
@@ -60,10 +68,10 @@ Posting to 1001Tracklists:
 
 1. Log in to 1001Tracklists in your browser. Export the cookies of the site with a cookies.txt extension, and save them as `data/cookies/1001.cookies.txt`.
 2. Save the browser fingerprint as `data/1001/browser.json`. It holds `ua`, `lang`, `langs`, `viewport`, `screen`, `dpr`, `tz`, `touch`, and `mobile`.
-3. Add the tracklist of the set to `data/1001/tracklists.json`. The key is the video id and the value is the full tracklist URL:
+3. Add the tracklist URL on the set edit page. Existing sets can still use `data/1001/tracklists.json` as a fallback map:
 
 ```json
 { "<video-id>": "https://www.1001tracklists.com/tracklist/<code>/<name>.html" }
 ```
 
-4. In the set page, a ready row shows `post to 1001`. The app has no page to set the URL yet.
+4. In the set page, a ready row shows `post to 1001`.

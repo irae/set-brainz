@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { getProcessingStatus } from './processing.js'
 
 const cache = new Map()
 
@@ -24,6 +25,149 @@ function decisionsPath(videoId) {
 
 function decisionsPrevPath(videoId) {
   return join(dataDir(), 'decisions', `${videoId}.prev.json`)
+}
+
+function isSourceLocked(videoId) {
+  const status = getProcessingStatus(videoId)
+  const audioDir = join(dataDir(), 'audio', videoId)
+  const hasAudio = existsSync(audioDir) && readdirSync(audioDir).some((name) => name.endsWith('.mp3'))
+  return status.status === 'queued' || status.status === 'running' || hasAudio
+    || existsSync(decisionsPath(videoId)) || listMergedFilenames(videoId).length > 0
+}
+
+function sourceSetsPath() {
+  return join(dataDir(), 'sets.json')
+}
+
+function readSourceSets() {
+  const path = sourceSetsPath()
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
+}
+
+function writeSourceSets(sets) {
+  mkdirSync(dataDir(), { recursive: true })
+  const target = sourceSetsPath()
+  const temp = `${target}.${process.pid}-${Date.now()}.tmp`
+  writeFileSync(temp, JSON.stringify(sets, null, 2) + '\n')
+  renameSync(temp, target)
+}
+
+function validSourceUrl(value) {
+  if (typeof value !== 'string') return false
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !!url.host
+  } catch {
+    return false
+  }
+}
+
+function validateVideoId(videoId) {
+  if (!/^[A-Za-z0-9_-]+$/.test(videoId)) throw storeError('invalid_video_id', 'invalid set id')
+}
+
+function youtubeId(sourceUrl) {
+  const url = new URL(sourceUrl)
+  if (url.hostname === 'youtu.be') return url.pathname.slice(1).split('/')[0] || null
+  if (!/(^|\.)youtube(?:-nocookie)?\.com$/.test(url.hostname)) return null
+  return url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts|live)\/([^/]+)/)?.[1] || null
+}
+
+export function createSourceSet({ url, title = '', tracklistUrl = '' } = {}) {
+  if (!validSourceUrl(url)) throw storeError('invalid_source_url', 'url must be an http or https URL')
+  if (typeof title !== 'string') throw storeError('invalid_title', 'title must be text')
+  if (typeof tracklistUrl !== 'string' || (tracklistUrl && !validSourceUrl(tracklistUrl))) {
+    throw storeError('invalid_tracklist_url', 'tracklistUrl must be empty or an http or https URL')
+  }
+  const sourceVideoId = youtubeId(url)
+  if (sourceVideoId && !/^[A-Za-z0-9_-]+$/.test(sourceVideoId)) {
+    throw storeError('invalid_video_id', 'the YouTube URL has an invalid video id')
+  }
+  const id = sourceVideoId || `source-${randomUUID()}`
+  const sets = readSourceSets()
+  if (Object.values(sets).some((entry) => entry.sourceUrl === url)) {
+    throw storeError('source_exists', 'a set already uses this source URL')
+  }
+  if (sets[id] || listMergedVideoIds().includes(id) || listDecisionVideoIds().includes(id)) {
+    throw storeError('source_exists', `a set already exists for ${id}`)
+  }
+  sets[id] = { sourceUrl: url, title: title.trim(), tracklistUrl }
+  writeSourceSets(sets)
+  return { videoId: id, ...sets[id], sourceLocked: isSourceLocked(id) }
+}
+
+export function getSourceSet(videoId) {
+  validateVideoId(videoId)
+  const entry = readSourceSets()[videoId]
+  if (entry) return {
+    videoId,
+    ...entry,
+    ...(youtubeId(entry.sourceUrl) ? { youtubeUrl: entry.sourceUrl } : {}),
+    sourceLocked: isSourceLocked(videoId),
+  }
+  if (!listMergedVideoIds().includes(videoId) && !listDecisionVideoIds().includes(videoId)) {
+    throw storeError('unknown_video', `no source set for video id ${videoId}`)
+  }
+  const infoPath = join(dataDir(), 'runs', videoId, 'info.txt')
+  let title = videoId
+  if (existsSync(infoPath)) {
+    const fields = readFileSync(infoPath, 'utf8').split('|')
+    if (fields.length >= 3) title = fields.slice(0, -2).join('|').trim() || videoId
+  }
+  return {
+    videoId,
+    sourceUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+    youtubeUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+    title,
+    tracklistUrl: getTracklistUrl(videoId),
+    sourceLocked: isSourceLocked(videoId),
+  }
+}
+
+export function updateSourceSet(videoId, changes = {}) {
+  validateVideoId(videoId)
+  const sets = readSourceSets()
+  if (!sets[videoId]) {
+    const existing = getSourceSet(videoId)
+    sets[videoId] = {
+      sourceUrl: existing.sourceUrl,
+      title: existing.title,
+      tracklistUrl: existing.tracklistUrl,
+    }
+  }
+  if (Object.hasOwn(changes, 'sourceUrl')) {
+    if (!validSourceUrl(changes.sourceUrl)) throw storeError('invalid_source_url', 'sourceUrl must be an http or https URL')
+    if (changes.sourceUrl !== sets[videoId].sourceUrl && isSourceLocked(videoId)) {
+      throw storeError('source_locked', 'the source URL is locked after download starts or results exist')
+    }
+    if (Object.entries(sets).some(([id, entry]) => id !== videoId && entry.sourceUrl === changes.sourceUrl)) {
+      throw storeError('source_exists', 'a set already uses this source URL')
+    }
+    sets[videoId].sourceUrl = changes.sourceUrl
+  }
+  if (Object.hasOwn(changes, 'title')) {
+    if (typeof changes.title !== 'string') throw storeError('invalid_title', 'title must be text')
+    sets[videoId].title = changes.title.trim()
+  }
+  if (Object.hasOwn(changes, 'tracklistUrl')) {
+    if (typeof changes.tracklistUrl !== 'string' || (changes.tracklistUrl && !validSourceUrl(changes.tracklistUrl))) {
+      throw storeError('invalid_tracklist_url', 'tracklistUrl must be empty or an http or https URL')
+    }
+    sets[videoId].tracklistUrl = changes.tracklistUrl
+  }
+  writeSourceSets(sets)
+  return { videoId, ...sets[videoId], sourceLocked: isSourceLocked(videoId) }
+}
+
+export function getTracklistUrl(videoId) {
+  const sourceSets = readSourceSets()
+  if (Object.hasOwn(sourceSets, videoId)) return sourceSets[videoId].tracklistUrl || ''
+  const path = join(dataDir(), '1001', 'tracklists.json')
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8'))[videoId] || '' : ''
+}
+
+function tracklistUrlFor(videoId, sourceSets, tracklists) {
+  return Object.hasOwn(sourceSets, videoId) ? sourceSets[videoId].tracklistUrl || '' : tracklists[videoId] || ''
 }
 
 function listMergedFilenames(videoId) {
@@ -143,32 +287,90 @@ function listDecisionVideoIds() {
 export function listSets() {
   const withDecisions = []
   const mergedOnly = []
+  const tracklistsPath = join(dataDir(), '1001', 'tracklists.json')
+  const tracklists = existsSync(tracklistsPath) ? JSON.parse(readFileSync(tracklistsPath, 'utf8')) : {}
+  const sourceSets = readSourceSets()
   const videoIds = [...new Set([...listMergedVideoIds(), ...listDecisionVideoIds()])]
+  const items = []
   for (const videoId of videoIds) {
+    const infoPath = join(dataDir(), 'runs', videoId, 'info.txt')
+    let title = videoId
+    if (existsSync(infoPath)) {
+      const fields = readFileSync(infoPath, 'utf8').split('|')
+      if (fields.length >= 3) title = fields.slice(0, -2).join('|').trim() || videoId
+    }
     const doc = peekDecisions(videoId)
     if (doc) {
       const newestFilename = newestMergedFilename(videoId)
-      withDecisions.push({
+      const entry = {
         videoId,
+        title: sourceSets[videoId]?.title || title,
+        sourceUrl: sourceSets[videoId]?.sourceUrl || `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+        ...(sourceSets[videoId]
+          ? (youtubeId(sourceSets[videoId].sourceUrl) ? { youtubeUrl: sourceSets[videoId].sourceUrl } : {})
+          : { youtubeUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` }),
+        tracklistUrl: tracklistUrlFor(videoId, sourceSets, tracklists),
         rowCount: doc.rows.length,
         decidedCount: doc.rows.filter(isDecided).length,
         mergedFile: doc.mergedFile,
         hasNewerMerge: newestFilename !== null && newestFilename !== doc.mergedFile,
-      })
+      }
+      withDecisions.push(entry)
+      items.push({ ...entry, ...processingStatus(videoId, 'completed') })
       continue
     }
     const filename = newestMergedFilename(videoId)
     if (!filename) continue
     const merged = readMergedFile(videoId, filename)
-    mergedOnly.push({
+    const entry = {
       videoId,
+      title: sourceSets[videoId]?.title || title,
+      sourceUrl: sourceSets[videoId]?.sourceUrl || `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+      ...(sourceSets[videoId]
+        ? (youtubeId(sourceSets[videoId].sourceUrl) ? { youtubeUrl: sourceSets[videoId].sourceUrl } : {})
+        : { youtubeUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` }),
+      tracklistUrl: tracklistUrlFor(videoId, sourceSets, tracklists),
       rowCount: merged.rows.length,
       decidedCount: 0,
       mergedFile: filename,
       hasNewerMerge: false,
+    }
+    mergedOnly.push(entry)
+    items.push({ ...entry, ...processingStatus(videoId, 'completed') })
+  }
+  for (const [videoId, source] of Object.entries(sourceSets)) {
+    if (items.some((entry) => entry.videoId === videoId)) continue
+    const infoPath = join(dataDir(), 'runs', videoId, 'info.txt')
+    let infoTitle = ''
+    if (existsSync(infoPath)) {
+      const fields = readFileSync(infoPath, 'utf8').split('|')
+      if (fields.length >= 3) infoTitle = fields.slice(0, -2).join('|').trim()
+    }
+    items.push({
+      videoId,
+      title: source.title || infoTitle || videoId,
+      sourceUrl: source.sourceUrl,
+      ...(youtubeId(source.sourceUrl) ? { youtubeUrl: source.sourceUrl } : {}),
+      tracklistUrl: source.tracklistUrl || '',
+      rowCount: 0,
+      decidedCount: 0,
+      mergedFile: null,
+      hasNewerMerge: false,
+      ...processingStatus(videoId, 'saved'),
     })
   }
-  return { withDecisions, mergedOnly }
+  return { withDecisions, mergedOnly, items }
+}
+
+function processingStatus(videoId, fallback) {
+  if (fallback === 'completed') return { status: 'completed', phase: 'process', step: null }
+  const status = getProcessingStatus(videoId)
+  if (status?.status === 'idle') {
+    return status.audioExists
+      ? { status: 'completed', phase: 'download', step: null, audioExists: true }
+      : { status: 'saved', audioExists: false }
+  }
+  return status || { status: fallback }
 }
 
 export function getSet(videoId) {
@@ -185,11 +387,39 @@ export function getSet(videoId) {
     ...row,
     merged: row.sources.map((uuid) => mergedByUuid.get(uuid)).filter(Boolean),
   }))
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    const own = row.merged
+    const ownEarliest = own.length ? Math.min(...own.map((entry) => entry.earliest)) : null
+    const ownLatest = own.length ? Math.max(...own.map((entry) => entry.latest)) : null
+    const nextCue = rows.slice(index + 1).find((next) => next.start?.seconds > (row.start?.seconds ?? -1))?.start?.seconds
+    const lower = row.start?.seconds ?? ownEarliest
+    const upper = nextCue ?? (row.start ? merged.durationSeconds : ownLatest)
+    row.rangeEntries = merged.rows.flatMap((entry) => {
+      if (own.some((source) => source.uuid === entry.uuid)) return [entry]
+      if (lower === null || entry.latest < lower || (upper !== null && upper !== undefined && entry.earliest >= upper)) return []
+      if (entry.kind === 'gap') return [entry]
+      const variants = entry.variants.filter((variant) =>
+        variant.start >= lower && (upper === null || upper === undefined || variant.start < upper),
+      )
+      return variants.length ? [{ ...entry, variants }] : []
+    })
+  }
   const numbers = rowNumbers(rows)
   rows.forEach((row, index) => {
     row.number = numbers[index]
+    row.postReady = isReadyToPost(row, row.number)
   })
-  return { videoId, mergedFile: doc.mergedFile, params: merged.params, set: doc.set, rows }
+  const source = getSourceSet(videoId)
+  return {
+    videoId,
+    sourceUrl: source.sourceUrl,
+    youtubeId: youtubeId(source.sourceUrl),
+    mergedFile: doc.mergedFile,
+    params: merged.params,
+    set: doc.set,
+    rows,
+  }
 }
 
 const TRACK_TEXT_FIELDS = ['artists', 'title', 'version', 'label']
@@ -379,9 +609,16 @@ export function needsNoLink(track) {
   )
 }
 
-export function isReadyToPost(row, number) {
+function hasPostFields(row, number) {
   if (number === null || number === undefined) return false
-  if (row.posted) return false
   if (needsNoLink(row.track)) return true
   return !!(row.track.links && row.track.links.length > 0)
+}
+
+export function isReadyToPost(row, number) {
+  return !row.posted && hasPostFields(row, number)
+}
+
+export function exportableRows(rows) {
+  return rows.filter((row) => hasPostFields(row, row.number))
 }

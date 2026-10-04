@@ -1,6 +1,6 @@
 import { test } from 'tap'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile } from './helpers/fixtures.js'
@@ -72,6 +72,8 @@ test('api sets (functional)', (t) => {
     t.equal(res.status, 200)
     t.equal(body.rows.length, 1)
     t.equal(body.rows[0].merged[0].uuid, row.uuid)
+    t.equal(body.sourceUrl, `https://www.youtube.com/watch?v=${videoId}`)
+    t.equal(body.youtubeId, videoId)
     t.end()
   })
 
@@ -82,6 +84,115 @@ test('api sets (functional)', (t) => {
     const res = await fetch(`${base}/api/sets/TESTVIDEONONE`)
 
     t.equal(res.status, 404)
+    t.end()
+  })
+
+  t.test('it saves source metadata without starting processing', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const base = await startServer(t, dir)
+    const res = await fetch(`${base}/api/sets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        url: 'https://www.youtube.com/watch?v=TESTVIDEO75',
+        title: 'Fixture source',
+        tracklistUrl: 'https://www.1001tracklists.com/tracklist/fixture.html',
+      }),
+    })
+    const source = await res.json()
+    const list = await (await fetch(`${base}/api/sets`)).json()
+
+    t.equal(res.status, 201)
+    t.equal(source.videoId, 'TESTVIDEO75')
+    t.equal(source.title, 'Fixture source')
+    t.equal(list.items[0].status, 'saved')
+    t.equal(list.items[0].tracklistUrl, 'https://www.1001tracklists.com/tracklist/fixture.html')
+    t.equal(list.items[0].youtubeUrl, 'https://www.youtube.com/watch?v=TESTVIDEO75')
+    t.equal(existsSync(join(dir, 'jobs', 'TESTVIDEO75.json')), false)
+    t.end()
+  })
+
+  t.test('it edits legacy set metadata without changing its source URL', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO76'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json')
+    const base = await startServer(t, dir)
+
+    const res = await fetch(`${base}/api/sets/${videoId}/metadata`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        title: 'Updated fixture title',
+        tracklistUrl: 'https://www.1001tracklists.com/tracklist/fixture.html',
+      }),
+    })
+    const source = await res.json()
+
+    t.equal(res.status, 200)
+    t.equal(source.sourceUrl, `https://www.youtube.com/watch?v=${videoId}`)
+    t.equal(source.title, 'Updated fixture title')
+    t.equal(source.tracklistUrl, 'https://www.1001tracklists.com/tracklist/fixture.html')
+    t.equal(source.sourceLocked, true)
+    const locked = await fetch(`${base}/api/sets/${videoId}/metadata`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceUrl: 'https://example.com/another-source' }),
+    })
+    t.equal(locked.status, 409)
+    t.equal((await locked.json()).code, 'source_locked')
+    const status = await (await fetch(`${base}/api/sets/${videoId}/process`)).json()
+    t.equal(status.status, 'completed')
+    t.equal(status.phase, 'process')
+    t.equal(status.audioReady, false)
+    t.end()
+  })
+
+  t.test('it allows a source URL change after a failed download with no MP3', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'source-TESTVIDEO79'
+    mkdirSync(join(dir, 'jobs'), { recursive: true })
+    writeFileSync(join(dir, 'sets.json'), JSON.stringify({
+      [videoId]: { sourceUrl: 'https://example.com/old-source', title: 'Fixture source', tracklistUrl: '' },
+    }))
+    writeFileSync(join(dir, 'jobs', `${videoId}.json`), JSON.stringify({
+      videoId,
+      phase: 'download',
+      status: 'failed',
+      step: 'download',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:01.000Z',
+      finishedAt: '2026-01-01T00:00:01.000Z',
+      error: 'fixture failure',
+    }))
+    const base = await startServer(t, dir)
+
+    const res = await fetch(`${base}/api/sets/${videoId}/metadata`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceUrl: 'https://example.com/corrected-source' }),
+    })
+    const source = await res.json()
+
+    t.equal(res.status, 200)
+    t.equal(source.sourceUrl, 'https://example.com/corrected-source')
+    t.equal(source.sourceLocked, false)
+    t.end()
+  })
+
+  t.test('it streams local MP3 audio', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO78'
+    const audioDir = join(dir, 'audio', videoId)
+    mkdirSync(audioDir, { recursive: true })
+    writeFileSync(join(audioDir, 'fixture.mp3'), 'fixture audio')
+    const base = await startServer(t, dir)
+
+    const res = await fetch(`${base}/api/sets/${videoId}/audio`)
+
+    t.equal(res.status, 200)
+    t.match(res.headers.get('content-type'), /audio\/mpeg/)
+    t.equal(await res.text(), 'fixture audio')
     t.end()
   })
 
@@ -359,10 +470,12 @@ test('api post to 1001tracklists (functional)', (t) => {
     const dir = makeEmptyDataDir(t)
     const videoId = 'TESTVIDEO50'
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const mapUrl = 'https://www.1001tracklists.com/tracklist/fixture/set.html'
+    const metadataUrl = 'https://www.1001tracklists.com/tracklist/fixture/metadata.html'
     const fakePostRow = async (args) => {
       t.same(args.cueSeconds, 10)
       t.same(args.trackNo, 0)
-      t.equal(args.tracklistUrl, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+      t.equal(args.tracklistUrl, metadataUrl)
       args.log({ event: 'open' })
       return {
         suggestionId: 'sug-1',
@@ -373,7 +486,14 @@ test('api post to 1001tracklists (functional)', (t) => {
       }
     }
     const base = await startServer(t, dir, { postRow: fakePostRow })
-    writeTracklistUrl(dir, videoId, 'https://www.1001tracklists.com/tracklist/fixture/set.html')
+    writeTracklistUrl(dir, videoId, mapUrl)
+    writeFileSync(join(dir, 'sets.json'), JSON.stringify({
+      [videoId]: {
+        sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        title: 'Fixture title',
+        tracklistUrl: metadataUrl,
+      },
+    }))
     const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
     const rowId = before.rows[0].id
     await makeReadyRow(base, videoId, rowId)

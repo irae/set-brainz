@@ -1,9 +1,9 @@
 import { test } from 'tap'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile, writeDecisionsFile } from './helpers/fixtures.js'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, rowNumbers } from '../app/store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, rowNumbers, createSourceSet, getSourceSet, updateSourceSet } from '../app/store.js'
 
 function useDataDir(dir) {
   process.env.SETBRAINZ_DATA_DIR = dir
@@ -196,6 +196,84 @@ test('store listSets (functional)', (t) => {
       second.mergedOnly.some((e) => e.videoId === videoId),
       'still merged-only after the second call',
     )
+    t.end()
+  })
+
+  t.end()
+})
+
+test('store range entries (functional)', (t) => {
+  const dir = makeEmptyDataDir(t)
+  useDataDir(dir)
+  const videoId = 'TESTVIDEO77'
+  const own = makeMergedRow({ earliest: 10, best: 10, latest: 14 })
+  const nearby = makeMergedRow({
+    earliest: 15,
+    best: 15,
+    latest: 25,
+    variants: [
+      { title: 'Inside start', artist: 'Fixture Artist', start: 15, end: 16, tracklistify: [], ripthatset: [] },
+      { title: 'Inside end', artist: 'Fixture Artist', start: 19, end: 20, tracklistify: [], ripthatset: [] },
+      { title: 'At next cue', artist: 'Fixture Artist', start: 20, end: 21, tracklistify: [], ripthatset: [] },
+    ],
+  })
+  const after = makeMergedRow({ earliest: 20, best: 20, latest: 25 })
+  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [own, nearby, after] })
+  writeDecisionsFile(dir, videoId, decisionsDoc(videoId, '20260101T000000Z-x.json', [
+    decisionRow({ id: 'decision-1', sources: [own.uuid], start: { seconds: 10, from: 'typed' } }),
+    decisionRow({ id: 'decision-2', sources: [nearby.uuid], start: { seconds: 20, from: 'typed' } }),
+    decisionRow({ id: 'decision-3', sources: [after.uuid] }),
+  ]))
+
+  const result = getSet(videoId)
+
+  t.same(result.rows[0].rangeEntries.map((entry) => entry.uuid), [own.uuid, nearby.uuid])
+  t.same(result.rows[0].rangeEntries[1].variants.map((variant) => variant.start), [15, 19])
+  t.end()
+})
+
+test('store source URL locks (functional)', (t) => {
+  t.test('an MP3 locks a changed source URL but allows the same value', (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO85'
+    const sourceUrl = `https://www.youtube.com/watch?v=${videoId}`
+    createSourceSet({ url: sourceUrl, title: 'Fixture title' })
+    const audioDir = join(dir, 'audio', videoId)
+    mkdirSync(audioDir, { recursive: true })
+    writeFileSync(join(audioDir, 'fixture.mp3'), 'fixture audio')
+
+    t.equal(getSourceSet(videoId).sourceLocked, true)
+    t.equal(updateSourceSet(videoId, { sourceUrl }).sourceUrl, sourceUrl)
+    t.throws(
+      () => updateSourceSet(videoId, { sourceUrl: 'https://example.com/changed-source' }),
+      { code: 'source_locked' },
+    )
+    t.end()
+  })
+
+  t.test('a failed download without an MP3 allows a source URL correction', (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO86'
+    const sourceUrl = `https://www.youtube.com/watch?v=${videoId}`
+    createSourceSet({ url: sourceUrl, title: 'Fixture title' })
+    mkdirSync(join(dir, 'jobs'), { recursive: true })
+    writeFileSync(join(dir, 'jobs', `${videoId}.json`), JSON.stringify({
+      videoId,
+      phase: 'download',
+      status: 'failed',
+      step: 'download',
+      startedAt: NOW,
+      updatedAt: NOW,
+      finishedAt: NOW,
+      error: 'fixture failure',
+    }))
+
+    const updated = updateSourceSet(videoId, { sourceUrl: 'https://example.com/corrected-source' })
+
+    t.equal(updated.sourceUrl, 'https://example.com/corrected-source')
+    t.equal(updated.sourceLocked, false)
     t.end()
   })
 

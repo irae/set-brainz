@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Set source</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<h1 id="page-title">Set source</h1>
+<section>
+<p><a href="/">Back to sets</a></p>
+<form id="source-form">
+<label>Source URL <input type="url" name="sourceUrl" required placeholder="https://"></label>
+<p id="source-lock" class="small" hidden>You cannot change the source URL after a download starts.</p>
+<label>Title <input type="text" name="title"></label>
+<label>1001Tracklists URL <input type="url" name="tracklistUrl" placeholder="https://www.1001tracklists.com/"></label>
+<p id="source-links"></p>
+<menu>
+<button type="submit">Save</button>
+</menu>
+</form>
+<div id="processing" hidden>
+<h2>Processing</h2>
+<p id="status"></p>
+<p id="error" class="note"></p>
+<button type="button" id="download" hidden>Download</button>
+<button type="button" id="process" hidden>Process</button>
+<p id="decisions-link"></p>
+</div>
+<p id="message" class="note" role="status"></p>
+</section>
+<script src="/vendor/jquery.js"></script>
+<script src="/form.js"></script>
+</body>
+</html>

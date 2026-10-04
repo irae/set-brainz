@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# Identify tracks in the MP3 of one video with Tracklistify (Shazam backend).
-# Defaults from tools/tracklistify/.env: 60 s segments, 10 s overlap, 25 req/min.
-# Log and tracklist files land in data/runs/<video-id>/tracklistify/.
-# Usage: scripts/run-tracklistify.sh <video-id>
 set -euo pipefail
 
 id="${1:?video id}"
-mp3s=(data/audio/"$id"/*.mp3)
+root="$(cd "$(dirname "$0")/.." && pwd)"
+data_dir="${SETBRAINZ_DATA_DIR:-$root/data}"
+mp3s=("$data_dir/audio/$id/"*.mp3)
+[ -e "${mp3s[0]}" ] || { echo "no MP3 audio for $id" >&2; exit 1; }
 file="$(realpath "${mp3s[0]}")"
-out="$PWD/data/runs/$id/tracklistify"
+out="$data_dir/runs/$id/tracklistify"
 mkdir -p "$out"
 
-(cd tools/tracklistify && uv run tracklistify -f all "$file") 2>&1 | tee "$out/run.log"
+(cd "$root/tools/tracklistify" && uv run tracklistify -f all "$file") 2>&1 | tee "$out/run.log"
 
-newest="$(ls -td tools/tracklistify/.tracklistify/output/*/ | head -1)"
+newest="$(ls -td "$root"/tools/tracklistify/.tracklistify/output/*/ | head -1)"
 cp "$newest"tracklist.* "$out/"

@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-# Download the best audio-only stream of a YouTube video into data/audio/<video-id>/,
-# then make an MP3 copy for players and for the identification tools.
-# Usage: scripts/download-audio.sh <youtube-url>
 set -euo pipefail
 
-url="${1:?youtube url}"
+id="${1:?set id}"
+url="${2:?source url}"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+data_dir="${SETBRAINZ_DATA_DIR:-$root/data}"
 
-yt-dlp -f bestaudio -o "data/audio/%(id)s/%(title)s.%(ext)s" "$url"
-
-for src in data/audio/*/*.webm data/audio/*/*.m4a; do
-  [ -e "$src" ] || continue
-  mp3="${src%.*}.mp3"
-  [ -e "$mp3" ] && continue
-  ffmpeg -v error -i "$src" -vn -c:a libmp3lame -b:a 192k "$mp3"
-done
+mkdir -p "$data_dir/audio/$id"
+yt-dlp --no-playlist -f 'bestaudio/best' --extract-audio --audio-format mp3 --audio-quality 192K \
+  -o "$data_dir/audio/$id/%(title)s.%(ext)s" "$url"
