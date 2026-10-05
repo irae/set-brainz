@@ -503,6 +503,19 @@ $(document).on('click', 'a.jump-link', function (e) {
   savePosition(seconds)
 })
 
+$(document).on('click', 'button[data-seek]', function () {
+  const delta = Number($(this).data('seek'))
+  if (audioPlayer) {
+    audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime + delta)
+    savePosition(audioPlayer.currentTime)
+    return
+  }
+  if (!player || typeof player.getCurrentTime !== 'function') return
+  const seconds = Math.max(0, player.getCurrentTime() + delta)
+  player.seekTo(seconds, true)
+  savePosition(seconds)
+})
+
 $(document).on('click', 'a.undo-link', function (e) {
   e.preventDefault()
   clearStart(rowIdOf($(this)))
@@ -576,6 +589,17 @@ function linkKindFromUrl(url) {
   return 'other'
 }
 
+let previewRequest = null
+$(document).on('input', '#track-dialog [name=link]', function () {
+  const $preview = $('#track-dialog .link-preview').text('')
+  if (previewRequest) previewRequest.abort()
+  const url = $(this).val().trim()
+  if (!/^https?:\/\/\S+$/i.test(url)) return
+  previewRequest = $.getJSON('/api/link-preview', { url }).done((data) => {
+    if (data && data.title) $preview.text(data.artist ? `${data.title} — ${data.artist}` : data.title)
+  })
+})
+
 function openDialog(rowId, fields) {
   const dialogEl = document.getElementById('track-dialog')
   dialogEl.returnValue = ''
@@ -583,6 +607,7 @@ function openDialog(rowId, fields) {
   const $dialog = $(dialogEl)
   $dialog.find('[name=cue]').val(fields.start ? hms(fields.start.seconds) : '')
   $dialog.find('[name=link]').val((fields.links && fields.links[0] && fields.links[0].url) || '')
+  $dialog.find('.link-preview').text('')
   $dialog.find('[name=artists]').val(fields.artists || '')
   $dialog.find('[name=title]').val(fields.title || '')
   $dialog.find('[name=version]').val(fields.version || '')

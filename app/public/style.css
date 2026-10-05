@@ -94,6 +94,15 @@ td, th {
   background: #000;
   z-index: 1;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.seek {
+  display: flex;
+  gap: 4px;
 }
 
 #yt {
