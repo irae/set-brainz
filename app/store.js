@@ -387,24 +387,20 @@ export function getSet(videoId) {
     ...row,
     merged: row.sources.map((uuid) => mergedByUuid.get(uuid)).filter(Boolean),
   }))
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index]
-    const own = row.merged
-    const ownEarliest = own.length ? Math.min(...own.map((entry) => entry.earliest)) : null
-    const ownLatest = own.length ? Math.max(...own.map((entry) => entry.latest)) : null
-    const nextCue = rows.slice(index + 1).find((next) => next.start?.seconds > (row.start?.seconds ?? -1))?.start?.seconds
-    const lower = row.start?.seconds ?? ownEarliest
-    const upper = nextCue ?? (row.start ? merged.durationSeconds : ownLatest)
+  const rowTimes = rows.map((row) => row.start?.seconds
+    ?? (row.merged.length ? Math.min(...row.merged.map((entry) => entry.earliest)) : null))
+  rows.forEach((row, index) => {
+    const lower = rowTimes[index]
+    const upper = lower === null ? null : rowTimes.slice(index + 1).find((time) => time !== null && time > lower) ?? merged.durationSeconds
+    row.span = lower === null ? null : { start: lower, end: upper }
     row.rangeEntries = merged.rows.flatMap((entry) => {
-      if (own.some((source) => source.uuid === entry.uuid)) return [entry]
-      if (lower === null || entry.latest < lower || (upper !== null && upper !== undefined && entry.earliest >= upper)) return []
+      if (row.merged.some((source) => source.uuid === entry.uuid)) return [entry]
+      if (lower === null || entry.latest < lower || entry.earliest >= upper) return []
       if (entry.kind === 'gap') return [entry]
-      const variants = entry.variants.filter((variant) =>
-        variant.start >= lower && (upper === null || upper === undefined || variant.start < upper),
-      )
+      const variants = entry.variants.filter((variant) => variant.start >= lower && variant.start < upper)
       return variants.length ? [{ ...entry, variants }] : []
     })
-  }
+  })
   const numbers = rowNumbers(rows)
   rows.forEach((row, index) => {
     row.number = numbers[index]

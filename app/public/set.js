@@ -121,7 +121,7 @@ function decidedMark(row) {
 
 function rangeScoredVariants(row) {
   const own = new Set(row.merged.map((entry) => entry.uuid))
-  return (row.rangeEntries || row.merged)
+  return row.rangeEntries
     .filter((entry) => entry.kind === 'track')
     .flatMap((entry) => entry.variants.map((variant) => ({ variant, score: variantScore(variant), own: own.has(entry.uuid) })))
     .sort((a, b) => b.own - a.own || b.score - a.score)
@@ -148,14 +148,7 @@ function winningSuggestionHtml(variant) {
 }
 
 function rangeGuessesHtml(row, omitVariant) {
-  const scored = rangeScoredVariants(row)
-  if (omitVariant) {
-    const primaryIndex = scored.findIndex(({ variant }) => variant === omitVariant
-      || (variant.title === omitVariant.title && variant.artist === omitVariant.artist
-        && variant.start === omitVariant.start && variant.end === omitVariant.end))
-    if (primaryIndex !== -1) scored.splice(primaryIndex, 1)
-  }
-  return scored.slice(0, omitVariant ? 1 : 2).map(({ variant }) => `<div class="guess">${openDialogSpan(variant.title, variant.artist)}${escapeHtml(variant.title)}</span>${variant.artist ? ` <span class="small">${escapeHtml(variant.artist)}</span>` : ''} ${jumpLink(variant.start, 'guess-time')}–${jumpLink(variant.end, 'guess-time')}${linksSpan(variantLinks(variant))}<div class="small">${variantEvidence(variant)}</div></div>`).join('')
+  return rangeScoredVariants(row).filter(({ variant }) => variant !== omitVariant).map(({ variant }) => `<div class="guess">${openDialogSpan(variant.title, variant.artist)}${escapeHtml(variant.title)}</span>${variant.artist ? ` <span class="small">${escapeHtml(variant.artist)}</span>` : ''} ${jumpLink(variant.start, 'guess-time')}–${jumpLink(variant.end, 'guess-time')}${linksSpan(variantLinks(variant))}<div class="small">${variantEvidence(variant)}</div></div>`).join('')
 }
 
 function guessCellHtml(row, omitVariant) {
@@ -617,7 +610,7 @@ function openDialog(rowId, fields) {
   $dialog.find('[name=stackedWithPrevious]').prop('checked', !!fields.stackedWithPrevious)
   $dialog.find('[name=note]').val(fields.note || '')
   const row = rowsById.get(rowId)
-  const entries = row ? (row.rangeEntries || row.merged) : []
+  const entries = row ? row.rangeEntries : []
   const guesses = entries.flatMap((entry) => entry.kind === 'track'
     ? entry.variants.map((variant) => `<li><button type="button" class="dialog-guess" data-title="${escapeHtml(variant.title)}" data-artists="${escapeHtml(variant.artist)}">${escapeHtml(variant.title)}</button><span class="small">${escapeHtml(variant.artist)} · ${variantEvidence({ tracklistify: variant.tracklistify, ripthatset: variant.ripthatset })} · ${hms(variant.start)}–${hms(variant.end)}</span>${linksSpan(variantLinks(variant))}</li>`)
     : [`<li><span>Gap</span><span class="small">${hms(entry.earliest)}–${hms(entry.latest)}</span></li>`])

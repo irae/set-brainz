@@ -203,32 +203,118 @@ test('store listSets (functional)', (t) => {
 })
 
 test('store range entries (functional)', (t) => {
-  const dir = makeEmptyDataDir(t)
-  useDataDir(dir)
-  const videoId = 'TESTVIDEO77'
-  const own = makeMergedRow({ earliest: 10, best: 10, latest: 14 })
-  const nearby = makeMergedRow({
-    earliest: 15,
-    best: 15,
-    latest: 25,
-    variants: [
-      { title: 'Inside start', artist: 'Fixture Artist', start: 15, end: 16, tracklistify: [], ripthatset: [] },
-      { title: 'Inside end', artist: 'Fixture Artist', start: 19, end: 20, tracklistify: [], ripthatset: [] },
-      { title: 'At next cue', artist: 'Fixture Artist', start: 20, end: 21, tracklistify: [], ripthatset: [] },
-    ],
+  let videoNumber = 70
+  const variant = (title, start) => ({ title, artist: 'Fixture Artist', start, end: start + 1, tracklistify: [], ripthatset: [] })
+  const titles = (row) => row.rangeEntries.flatMap((entry) => entry.kind === 'track' ? entry.variants.map((v) => v.title) : ['gap'])
+
+  function setup(t, rows, decisions) {
+    videoNumber += 1
+    const videoId = `TESTVIDEO${videoNumber}`
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows })
+    writeDecisionsFile(dir, videoId, decisionsDoc(videoId, '20260101T000000Z-x.json', decisions.map((d, i) => decisionRow({ id: `decision-${i + 1}`, ...d }))))
+    return getSet(videoId)
+  }
+
+  t.test('a confirmed next row bounds the span and the variants at its cue stay out', (t) => {
+    const own = makeMergedRow({ earliest: 10, best: 10, latest: 14, variants: [variant('Own', 10)] })
+    const nearby = makeMergedRow({ earliest: 15, best: 15, latest: 25, variants: [variant('Inside start', 15), variant('Inside end', 19), variant('At next cue', 20)] })
+    const after = makeMergedRow({ earliest: 20, best: 20, latest: 25, variants: [variant('After', 20)] })
+    const result = setup(t, [own, nearby, after], [
+      { sources: [own.uuid], start: { seconds: 10, from: 'typed' } },
+      { sources: [nearby.uuid], start: { seconds: 20, from: 'typed' } },
+      { sources: [after.uuid] },
+    ])
+    t.same(result.rows[0].span, { start: 10, end: 20 })
+    t.same(titles(result.rows[0]), ['Own', 'Inside start', 'Inside end'])
+    t.end()
   })
-  const after = makeMergedRow({ earliest: 20, best: 20, latest: 25 })
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [own, nearby, after] })
-  writeDecisionsFile(dir, videoId, decisionsDoc(videoId, '20260101T000000Z-x.json', [
-    decisionRow({ id: 'decision-1', sources: [own.uuid], start: { seconds: 10, from: 'typed' } }),
-    decisionRow({ id: 'decision-2', sources: [nearby.uuid], start: { seconds: 20, from: 'typed' } }),
-    decisionRow({ id: 'decision-3', sources: [after.uuid] }),
-  ]))
 
-  const result = getSet(videoId)
+  t.test('an unconfirmed next row bounds the span at its earliest detection', (t) => {
+    const own = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('Own', 100)] })
+    const inside = makeMergedRow({ earliest: 120, best: 120, latest: 125, variants: [variant('Inside', 120)] })
+    const next = makeMergedRow({ earliest: 200, best: 200, latest: 210, variants: [variant('Next', 200)] })
+    const later = makeMergedRow({ earliest: 300, best: 300, latest: 310, variants: [variant('Later', 300)] })
+    const result = setup(t, [own, inside, next, later], [
+      { sources: [own.uuid, inside.uuid], start: { seconds: 95, from: 'grab' } },
+      { sources: [next.uuid] },
+      { sources: [later.uuid] },
+    ])
+    t.same(result.rows[0].span, { start: 95, end: 200 })
+    t.same(titles(result.rows[0]), ['Own', 'Inside'])
+    t.same(result.rows[1].span, { start: 200, end: 300 })
+    t.same(titles(result.rows[1]), ['Next'])
+    t.end()
+  })
 
-  t.same(result.rows[0].rangeEntries.map((entry) => entry.uuid), [own.uuid, nearby.uuid])
-  t.same(result.rows[0].rangeEntries[1].variants.map((variant) => variant.start), [15, 19])
+  t.test('a confirmed row with no next row and the last row end at the end of the set', (t) => {
+    const own = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('Own', 100)] })
+    const late = makeMergedRow({ earliest: 3000, best: 3000, latest: 3010, variants: [variant('Late', 3000)] })
+    const result = setup(t, [own, late], [{ sources: [own.uuid, late.uuid], start: { seconds: 90, from: 'typed' } }])
+    t.same(result.rows[0].span, { start: 90, end: 3600 })
+    t.same(titles(result.rows[0]), ['Own', 'Late'])
+    t.end()
+  })
+
+  t.test('an owner-added row with no sources and no start has no span and does not bound the row above', (t) => {
+    const own = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('Own', 100)] })
+    const middle = makeMergedRow({ earliest: 150, best: 150, latest: 160, variants: [variant('Middle', 150)] })
+    const next = makeMergedRow({ earliest: 200, best: 200, latest: 210, variants: [variant('Next', 200)] })
+    const result = setup(t, [own, middle, next], [
+      { sources: [own.uuid, middle.uuid], start: { seconds: 100, from: 'typed' } },
+      { sources: [] },
+      { sources: [next.uuid] },
+    ])
+    t.same(result.rows[1].span, null)
+    t.same(result.rows[1].rangeEntries, [])
+    t.same(result.rows[0].span, { start: 100, end: 200 })
+    t.same(titles(result.rows[0]), ['Own', 'Middle'])
+    t.end()
+  })
+
+  t.test('an owner-added row with a start bounds the row above', (t) => {
+    const own = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('Own', 100)] })
+    const middle = makeMergedRow({ earliest: 150, best: 150, latest: 160, variants: [variant('Middle', 150)] })
+    const result = setup(t, [own, middle], [
+      { sources: [own.uuid], start: { seconds: 100, from: 'typed' } },
+      { sources: [], start: { seconds: 140, from: 'typed' } },
+    ])
+    t.same(result.rows[0].span, { start: 100, end: 140 })
+    t.same(titles(result.rows[0]), ['Own'])
+    t.same(result.rows[1].span, { start: 140, end: 3600 })
+    t.same(titles(result.rows[1]), ['Middle'])
+    t.end()
+  })
+
+  t.test('every detection inside the span stays in the list, also those of deleted rows', (t) => {
+    const own = makeMergedRow({ earliest: 10050, best: 10050, latest: 10060, variants: [variant('Loving', 10050)] })
+    const excess = makeMergedRow({ earliest: 10100, best: 10100, latest: 10110, variants: [variant('Excess', 10100)] })
+    const fashion = makeMergedRow({ earliest: 10116, best: 10116, latest: 10120, variants: [variant('Fashion', 10116)] })
+    const apathy = makeMergedRow({ earliest: 10200, best: 10200, latest: 10210, variants: [variant('Apathy', 10200)] })
+    const next = makeMergedRow({ earliest: 10300, best: 10300, latest: 10310, variants: [variant('Next', 10300)] })
+    const result = setup(t, [own, excess, fashion, apathy, next], [
+      { sources: [own.uuid], start: { seconds: 10045, from: 'typed' } },
+      { sources: [next.uuid], start: { seconds: 10273, from: 'typed' } },
+    ])
+    t.same(result.rows[0].span, { start: 10045, end: 10273 })
+    t.same(titles(result.rows[0]), ['Loving', 'Excess', 'Fashion', 'Apathy'])
+    t.end()
+  })
+
+  t.test('an unconfirmed row starts at its earliest detection and a next row at or before that start does not bound it', (t) => {
+    const first = makeMergedRow({ earliest: 500, best: 500, latest: 520, variants: [variant('First', 500)] })
+    const overlap = makeMergedRow({ earliest: 480, best: 480, latest: 490, variants: [variant('Overlap', 480)] })
+    const last = makeMergedRow({ earliest: 700, best: 700, latest: 710, variants: [variant('Last', 700)] })
+    const result = setup(t, [first, overlap, last], [
+      { sources: [first.uuid] },
+      { sources: [overlap.uuid] },
+      { sources: [last.uuid] },
+    ])
+    t.same(result.rows[0].span, { start: 500, end: 700 })
+    t.end()
+  })
+
   t.end()
 })
 
