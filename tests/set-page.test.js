@@ -1,517 +1,425 @@
 import { test } from 'tap'
-import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { randomUUID } from 'node:crypto'
-import { makeEmptyDataDir, makeMergedRow, writeMergedFile } from './helpers/fixtures.js'
+import { chromium } from 'playwright'
+import { buildRealSlice } from './helpers/real-slice.js'
 import { createApp } from '../app/server.js'
 
-function playwrightCliAvailable() {
-  try {
-    execFileSync('playwright-cli', ['--version'], { stdio: 'ignore', timeout: 15000 })
-    return true
-  } catch {
-    return false
-  }
+const FAKE_YT = `
+window.YT = {
+  PlayerState: { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 },
+  Player: class {
+    constructor(id, options) {
+      window.__fake = this
+      this.state = -1
+      this.time = 0
+      this.calls = []
+      this.options = options
+    }
+    seekTo(s) { this.calls.push('seek:' + s); this.time = s }
+    playVideo() { this.calls.push('play'); this.state = 1 }
+    pauseVideo() { this.calls.push('pause'); this.state = 2 }
+    mute() { this.calls.push('mute') }
+    unMute() { this.calls.push('unMute') }
+    getCurrentTime() { return this.time }
+    getPlayerState() { return this.state }
+  },
 }
+setTimeout(() => window.onYouTubeIframeAPIReady(), 0)
+`
 
-const skipReason = playwrightCliAvailable()
-  ? false
-  : 'playwright-cli is not on PATH; install it with `npm install -g @playwright/cli@latest` to run this test'
+const hms = (s) => [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map((n) => String(n).padStart(2, '0')).join(':')
 
-async function startServer(t, dir) {
+test('the set page, one browser and one page, in sequence', { bail: true, timeout: 240000 }, async (t) => {
+  const { dir, videoId } = buildRealSlice(t)
   process.env.SETBRAINZ_DATA_DIR = dir
-  const app = createApp()
+
+  const previews = []
+  const app = createApp({
+    fetchPreview: async (url) => {
+      previews.push(url)
+      return { title: 'Stub Title', artist: 'Stub Artist' }
+    },
+  })
   const server = app.listen(0, '127.0.0.1')
   await once(server, 'listening')
   t.teardown(() => server.close())
-  return `http://127.0.0.1:${server.address().port}`
-}
+  const base = `http://127.0.0.1:${server.address().port}`
 
-function pw(session, args, timeout = 10000) {
-  execFileSync('playwright-cli', ['cli', '-s', session, ...args], { stdio: 'ignore', timeout })
-}
-
-function pwEval(session, expr) {
-  const out = execFileSync('playwright-cli', ['cli', '--raw', '-s', session, 'eval', expr], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: 10000,
+  const browser = await chromium.launch({ headless: true })
+  t.teardown(() => browser.close())
+  const page = await (await browser.newContext()).newPage()
+  const pageErrors = []
+  page.on('pageerror', (e) => pageErrors.push(e.message))
+  await page.route('**/*', (route) => {
+    const url = route.request().url()
+    if (url.startsWith(base)) return route.continue()
+    if (url === 'https://www.youtube.com/iframe_api') return route.fulfill({ contentType: 'text/javascript', body: FAKE_YT })
+    return route.abort()
   })
-  return JSON.parse(out.trim())
-}
 
-async function openPage(t, url) {
-  const session = `sb-${randomUUID().slice(0, 8)}`
-  const child = spawn('playwright-cli', ['cli', '-s', session, 'open', '--browser=chromium', '--no-headed', url], {
-    stdio: 'ignore',
-    detached: true,
-  })
-  child.unref()
-  t.teardown(() => pw(session, ['close']))
-
-  const deadline = Date.now() + 20000
-  while (Date.now() < deadline) {
-    try {
-      pwEval(session, '1')
-      return session
-    } catch {
-      await wait(500)
-    }
+  const api = async (path, method = 'GET', body) => {
+    const res = await fetch(`${base}/api/sets/${videoId}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(`${method} ${path} answered ${res.status}`)
+    return res.json()
   }
-  throw new Error('timed out opening the headless browser session')
-}
-
-function shiftClick(session, selector) {
-  pw(session, ['keydown', 'Shift'])
-  pw(session, ['click', selector])
-  pw(session, ['keyup', 'Shift'])
-}
-
-function shiftHoverClick(session, rowSelector, linkSelector) {
-  pw(session, ['keydown', 'Shift'])
-  pw(session, ['hover', rowSelector])
-  pw(session, ['click', linkSelector])
-  pw(session, ['keyup', 'Shift'])
-}
-
-function installSeekSpy(session) {
-  pwEval(session, "(() => { player = { seekCalls: 0, seekTo() { this.seekCalls++ }, playVideo(){}, getCurrentTime(){ return 0 }, getPlayerState(){ return 2 } }; return 'ok' })()")
-}
-
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function waitUntil(fn) {
-  const deadline = Date.now() + 5000
-  while (Date.now() < deadline) {
-    if (await fn()) return
-    await wait(200)
+  const settle = () => page.evaluate(() => new Promise((resolve) => {
+    if (!$.active) return resolve()
+    $(document).one('ajaxStop', () => resolve())
+  }))
+  const refresh = async () => {
+    await page.evaluate(() => loadAndRender())
+    await settle()
   }
-  throw new Error('timed out waiting for the page to update')
-}
+  const rowSel = (row) => `tr[data-row-id="${row.id}"]`
+  const fakeCalls = () => page.evaluate(() => window.__fake.calls.slice())
+  const resetFake = (state, time) => page.evaluate(([s, tm]) => {
+    window.__fake.calls.length = 0
+    window.__fake.state = s
+    window.__fake.time = tm
+  }, [state, time])
+  const toasts = () => page.$$eval('.toast', (els) => els.map((el) => el.textContent))
+  const clearToasts = () => page.evaluate(() => $('#toasts').empty())
 
-test('a track row shows the words of the user, not the guess (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO50'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', {
-    rows: [makeMergedRow({
-      variants: [{
-        title: 'Shazam Guess Title',
-        artist: 'Shazam Guess Artist',
-        start: 5,
-        end: 20,
-        tracklistify: [],
-        ripthatset: [],
-      }],
-    })],
-  })
-  const base = await startServer(t, dir)
-  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  const rowId = before.rows[0].id
-  await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ track: { artists: 'Real Artist', title: 'Real Title' } }),
-  })
+  await page.goto(`${base}/sets/${videoId}`)
+  await page.waitForFunction(() => window.__fake && document.querySelector('#tracklist tbody tr'))
+  await settle()
 
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
-  const titleCellText = pwEval(session, "document.querySelector('tbody tr td:nth-child(2)').textContent")
+  let data = await api('')
+  const variantTitles = (row) => row.rangeEntries.flatMap((e) => e.kind === 'track' ? e.variants.map((v) => v.title) : [])
 
-  t.match(titleCellText, /Real Title/)
-  t.match(titleCellText, /Real Artist/)
-  t.notMatch(titleCellText, /Shazam Guess Title/)
-  t.notMatch(titleCellText, /Shazam Guess Artist/)
-  t.end()
-})
-
-test('a decided row hides its small timestamps and shows undo instead, and undo restores the computed times (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO51'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  const rowId = before.rows[0].id
-  await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ start: { seconds: 42, from: 'best' } }),
-  })
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.big') !== null"))
-  const decidedHtml = pwEval(session, "document.querySelector('a.jump-link.big').outerHTML")
-  t.match(decidedHtml, /\bdecided\b/)
-  t.match(decidedHtml, /data-t="42"/)
-  t.equal(pwEval(session, "document.querySelector('a.jump-link.earliest')"), null)
-  t.equal(pwEval(session, "getComputedStyle(document.querySelector('a.undo-link')).display"), 'none', 'undo is hidden until shift and hover')
-
-  shiftHoverClick(session, 'tbody tr', 'a.undo-link')
-  await waitUntil(() => !pwEval(session, "document.querySelector('a.jump-link.big').outerHTML").includes('decided'))
-
-  const clearedHtml = pwEval(session, "document.querySelector('a.jump-link.big').outerHTML")
-  t.notMatch(clearedHtml, /\bdecided\b/)
-  t.match(clearedHtml, /data-t="0"/)
-  t.ok(pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"), 'the small timestamps return once undecided')
-  t.end()
-})
-
-test('a decided first row keeps its 00:00:00 link alongside undo, a later decided row shows only undo (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO63'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', {
-    rows: [makeMergedRow(), makeMergedRow({ earliest: 50, best: 55, latest: 60 })],
-  })
-  const base = await startServer(t, dir)
-  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  await fetch(`${base}/api/sets/${videoId}/rows/${before.rows[0].id}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ start: { seconds: 30, from: 'best' } }),
-  })
-  await fetch(`${base}/api/sets/${videoId}/rows/${before.rows[1].id}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ start: { seconds: 90, from: 'best' } }),
-  })
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 2"))
-
-  const firstRowSmall = pwEval(session, "document.querySelectorAll('tbody tr')[0].querySelector('.jump .small').innerHTML")
-  t.match(firstRowSmall, /data-t="0"/, 'the first row keeps a link back to the start of the set')
-  t.match(firstRowSmall, /undo-link/, 'the first row also offers undo')
-
-  const secondRowSmall = pwEval(session, "document.querySelectorAll('tbody tr')[1].querySelector('.jump .small').innerHTML")
-  t.notMatch(secondRowSmall, /data-t="0"/, 'a later decided row has no zero link')
-  t.match(secondRowSmall, /undo-link/)
-  t.end()
-})
-
-test('a shift click on the big timestamp always saves it, on a row with or without a decision already (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO56'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', {
-    rows: [
-      makeMergedRow({ earliest: 5, best: 5, latest: 10 }),
-      makeMergedRow({ earliest: 50, best: 55, latest: 60 }),
-    ],
-  })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 2"))
-
-  const bigSelector = "document.querySelectorAll('tbody tr')[1].querySelector('a.jump-link.big')"
-  const before = pwEval(session, `${bigSelector}.outerHTML`)
-  t.notMatch(before, /\bdecided\b/)
-  t.match(before, /data-t="45"/)
-
-  shiftClick(session, 'tbody tr:nth-child(2) a.jump-link.big')
-  await waitUntil(() => pwEval(session, `${bigSelector}.outerHTML`).includes('decided'))
-
-  let after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  t.match(after.rows[1].start, { seconds: 45, from: 'big' })
-
-  shiftClick(session, 'tbody tr:nth-child(2) a.jump-link.big.decided')
-  await wait(300)
-
-  after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  t.match(after.rows[1].start, { seconds: 45, from: 'big' }, 'a second shift click on a decided big timestamp saves again, it does not clear')
-  t.match(pwEval(session, `${bigSelector}.outerHTML`), /\bdecided\b/)
-  t.end()
-})
-
-test('a failed save shows a message with the status code, and the page never fails in silence (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO60'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
-
-  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  const rowId = before.rows[0].id
-  await fetch(`${base}/api/sets/${videoId}/rows/${rowId}`, { method: 'DELETE' })
-
-  shiftClick(session, 'a.jump-link.earliest')
-  await waitUntil(() => pwEval(session, "document.querySelector('.note') !== null"))
-
-  const noteText = pwEval(session, "document.querySelector('.note').textContent")
-  t.match(noteText, /404/)
-  t.end()
-})
-
-test('a plain click moves the player, and a shift click on a small timestamp saves a decision without moving it (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO52'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
-  installSeekSpy(session)
-
-  pw(session, ['click', 'a.jump-link.best'])
-  await wait(300)
-  t.equal(pwEval(session, 'player.seekCalls'), 1)
-
-  shiftClick(session, 'a.jump-link.earliest')
-  await waitUntil(async () => {
-    const data = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-    return data.rows[0].start !== null
-  })
-
-  const after = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  t.match(after.rows[0].start, { from: 'earliest' })
-  t.equal(pwEval(session, 'player.seekCalls'), 1)
-  t.end()
-})
-
-test('a plain click reads the player state, not a page flag, to decide whether to start playback (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO61'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('a.jump-link.earliest') !== null"))
-  pwEval(session, `(() => {
-    window.__calls = []
-    player = {
-      state: YT.PlayerState.UNSTARTED,
-      seekTo() { window.__calls.push('seek') },
-      playVideo() { window.__calls.push('play'); this.state = YT.PlayerState.PLAYING },
-      pauseVideo() { window.__calls.push('pause'); this.state = YT.PlayerState.PAUSED },
-      getCurrentTime() { return 0 },
-      getPlayerState() { return this.state },
+  await t.test('the table draws one row for each decision row, with ready colour, number and decided mark', async (t) => {
+    t.equal(await page.locator('#tracklist tbody tr').count(), data.rows.length)
+    for (const row of data.rows) {
+      const cls = await page.getAttribute(rowSel(row), 'class')
+      t.equal(/\brow-ready\b/.test(cls), row.number !== null, `ready colour for number ${row.number}`)
+      t.equal(/\bdecided\b/.test(cls), !!row.track)
     }
-    return 'ok'
-  })()`)
+    const numbered = data.rows.filter((r) => r.number !== null)
+    t.ok(numbered.length > 0, 'the slice holds numbered rows')
+    t.match(await page.textContent(`${rowSel(numbered[0])} .row-number`), /^01/)
+    t.end()
+  })
 
-  pw(session, ['click', 'a.jump-link.earliest'])
-  await wait(300)
-  t.same(pwEval(session, 'window.__calls'), ['seek', 'play'], 'the first plain click, before the player has ever played, starts playback')
-
-  pw(session, ['click', 'a.jump-link.best'])
-  await wait(300)
-  t.same(pwEval(session, 'window.__calls'), ['seek', 'play', 'seek'], 'a later click, while the player already plays, only seeks')
-
-  pw(session, ['keydown', 'Space'])
-  pw(session, ['keyup', 'Space'])
-  await wait(300)
-  t.same(
-    pwEval(session, 'window.__calls'),
-    ['seek', 'play', 'seek', 'pause'],
-    'the space bar pauses the playing player',
-  )
-
-  pw(session, ['click', 'a.jump-link.latest'])
-  await wait(300)
-  t.same(
-    pwEval(session, 'window.__calls'),
-    ['seek', 'play', 'seek', 'pause', 'seek'],
-    'a click on a paused player only seeks, it never forces play again, whatever earlier click started playback',
-  )
-  t.end()
-})
-
-test('the space bar starts and pauses the player, but not while the user types or the dialog is open (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO62'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
-  pwEval(session, `(() => {
-    window.__calls = []
-    window.__state = YT.PlayerState.PAUSED
-    player = {
-      playVideo() { window.__calls.push('play'); window.__state = YT.PlayerState.PLAYING },
-      pauseVideo() { window.__calls.push('pause'); window.__state = YT.PlayerState.PAUSED },
-      getPlayerState() { return window.__state },
+  await t.test('the table shows every detection of the row span, saved or guessed', async (t) => {
+    for (const row of data.rows) {
+      const expected = [...new Set(variantTitles(row))].sort()
+      const shown = await page.$$eval(`tr[data-row-id="${row.id}"] .open-dialog[data-title]`, (els) => els.map((el) => el.dataset.title))
+      t.same([...new Set(shown)].sort(), expected, `row ${row.number ?? row.id}`)
     }
-    return 'ok'
-  })()`)
+    t.end()
+  })
 
-  function pressSpace(target) {
-    return pwEval(session, `(() => {
-      const ev = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true })
-      ;(${target}).dispatchEvent(ev)
-      return 'ok'
-    })()`)
+  await t.test('the dialog lists the same detections and gaps as the row span, and Escape closes it', async (t) => {
+    const row = data.rows.reduce((best, r) => (r.rangeEntries.length > best.rangeEntries.length ? r : best))
+    t.ok(row.span, 'the row has a span')
+    await page.click(`${rowSel(row)} td:nth-child(2) b .open-dialog`)
+    t.ok(await page.isVisible('#track-dialog'))
+    const items = await page.locator('#dialog-guesses li').count()
+    t.equal(items, row.rangeEntries.reduce((n, e) => n + (e.kind === 'track' ? e.variants.length : 1), 0))
+    const listed = await page.$$eval('#dialog-guesses .dialog-guess', (els) => els.map((el) => el.dataset.title))
+    t.same(listed.sort(), variantTitles(row).sort())
+    await page.keyboard.press('Escape')
+    t.notOk(await page.isVisible('#track-dialog'))
+    t.end()
+  })
+
+  await t.test('a click on a guess in the table fills the dialog, and a click on a detection in the dialog refills it', async (t) => {
+    const row = data.rows.find((r) => variantTitles(r).length >= 2)
+    t.ok(row, 'a row with two detections exists')
+    await page.click(`${rowSel(row)} td.guesses .open-dialog >> nth=0`)
+    const guessTitle = await page.inputValue('#track-dialog [name=title]')
+    t.ok(variantTitles(row).includes(guessTitle))
+    const other = page.locator('#dialog-guesses .dialog-guess').last()
+    const otherTitle = await other.getAttribute('data-title')
+    const otherArtist = await other.getAttribute('data-artists')
+    await other.click()
+    t.equal(await page.inputValue('#track-dialog [name=title]'), otherTitle)
+    t.equal(await page.inputValue('#track-dialog [name=artists]'), otherArtist)
+    await page.click('#track-cancel')
+    t.same((await api('')).rows.find((r) => r.id === row.id).track, row.track, 'Cancel saved nothing')
+    t.end()
+  })
+
+  await t.test('the Link field has the width of the other fields, and the preview shows below it from the stub', async (t) => {
+    await page.click(`${rowSel(data.rows[0])} td:nth-child(2) b .open-dialog`)
+    const box = (sel) => page.$eval(sel, (el) => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+    })
+    const link = await box('#track-dialog [name=link]')
+    const artists = await box('#track-dialog [name=artists]')
+    t.equal(Math.round(link.left), Math.round(artists.left))
+    t.equal(Math.round(link.right), Math.round(artists.right))
+
+    await page.fill('#track-dialog [name=link]', 'not a link')
+    t.equal(await page.textContent('#track-dialog .link-preview'), '')
+    t.equal(previews.length, 0, 'no request for text that is not a web address')
+
+    await page.fill('#track-dialog [name=link]', 'https://example.test/track/1')
+    await page.waitForFunction(() => document.querySelector('#track-dialog .link-preview').textContent !== '')
+    t.equal(await page.textContent('#track-dialog .link-preview'), 'Stub Title — Stub Artist')
+    t.same(previews, ['https://example.test/track/1'])
+    const preview = await box('#track-dialog .link-preview')
+    t.ok(preview.bottom > link.bottom && preview.top >= (link.top + link.bottom) / 2, 'the preview sits below the field')
+
+    await page.fill('#track-dialog [name=link]', '')
+    t.equal(await page.textContent('#track-dialog .link-preview'), '')
+    await page.click('#track-cancel')
+    t.end()
+  })
+
+  await t.test('Save writes the track, link kind, note and typed cue, and the row redraws; a bad cue keeps the dialog open', async (t) => {
+    await api('/rows/' + data.rows[1].id, 'PATCH', { start: null, track: null, note: '' })
+    await refresh()
+    const row = data.rows[1]
+    await page.click(`${rowSel(row)} td:nth-child(2) b .open-dialog`)
+    await page.fill('#track-dialog [name=cue]', 'bad')
+    await page.fill('#track-dialog [name=artists]', 'Typed Artist')
+    await page.fill('#track-dialog [name=title]', 'Typed Title')
+    await page.click('#track-form button[type=submit]')
+    await page.waitForSelector('.toast')
+    t.ok(await page.isVisible('#track-dialog'), 'the dialog stays open')
+    t.match((await toasts()).join(' '), /cue must be/)
+    await clearToasts()
+
+    await page.fill('#track-dialog [name=cue]', '0:07:30')
+    await page.fill('#track-dialog [name=link]', 'https://open.spotify.com/track/TESTTRACK01')
+    await page.fill('#track-dialog [name=note]', 'typed note')
+    await Promise.all([page.waitForResponse((r) => r.request().method() === 'PATCH'), page.click('#track-form button[type=submit]')])
+    await settle()
+    t.notOk(await page.isVisible('#track-dialog'))
+    const saved = (await api('')).rows.find((r) => r.id === row.id)
+    t.match(saved.start, { seconds: 450, from: 'typed' })
+    t.match(saved.track, { artists: 'Typed Artist', title: 'Typed Title', links: [{ kind: 'spotify' }] })
+    t.equal(saved.note, 'typed note')
+    t.match(await page.textContent(`${rowSel(row)} td:nth-child(2)`), /Typed Title/)
+    t.match(await page.getAttribute(`${rowSel(row)} a.jump-link.big`, 'data-t'), /^450$/)
+    t.end()
+  })
+
+  const reset = async () => {
+    for (const row of (await api('')).rows) await api('/rows/' + row.id, 'PATCH', { start: null, track: null, note: '' })
+    data = await api('')
+    await refresh()
   }
+  await reset()
+  const index = data.rows.findIndex((r, i) => i >= 2 && i < data.rows.length - 2 && r.merged.length && r.merged.every((m) => m.kind === 'track'))
+  t.ok(index > 0, 'a plain track row exists in the slice')
+  const target = () => data.rows[index]
 
-  pressSpace('document.body')
-  t.same(pwEval(session, 'window.__calls'), ['play'], 'space starts a paused player')
-
-  pressSpace('document.body')
-  t.same(pwEval(session, 'window.__calls'), ['play', 'pause'], 'space pauses a playing player')
-
-  pwEval(session, "(() => { window.__calls = []; document.getElementById('track-dialog').showModal(); return 'ok' })()")
-  pressSpace('document.body')
-  t.same(pwEval(session, 'window.__calls'), [], 'space does nothing while the dialog is open')
-  pwEval(session, "(() => { document.getElementById('track-dialog').close(); window.__calls = []; return 'ok' })()")
-
-  pressSpace("document.querySelector('[name=note]')")
-  t.same(pwEval(session, 'window.__calls'), [], 'space does nothing while the user types in an input')
-  t.end()
-})
-
-test('the saved position key names its own video, so a second video never clashes (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO53'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
-
-  t.equal(pwEval(session, 'POSITION_KEY'), 'sb-position:TESTVIDEO53')
-  pwEval(session, '(() => { savePosition(77); return "ok" })()')
-  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO53')"), '77')
-
-  pwEval(session, "(() => { localStorage.setItem('sb-position:TESTVIDEO54', '200'); return 'ok' })()")
-  t.equal(pwEval(session, 'loadSavedPosition()'), 77)
-  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO54')"), '200')
-  t.end()
-})
-
-test('on load, a saved position mutes, plays, seeks, pauses and unmutes once; no saved position or a saved zero leaves the player alone (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO57'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
-  const base = await startServer(t, dir)
-
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelector('tbody tr') !== null"))
-
-  pwEval(session, `(() => {
-    window.__calls = []
-    player = {
-      mute() { window.__calls.push('mute') },
-      unMute() { window.__calls.push('unMute') },
-      playVideo() { window.__calls.push('playVideo') },
-      pauseVideo() { window.__calls.push('pauseVideo') },
-      seekTo(s) { window.__calls.push('seekTo:' + s) },
-      getCurrentTime() { return 0 },
+  await t.test('the seek buttons move the player by -10, -1, +1 and +10 seconds, never below zero, and save the position', async (t) => {
+    await resetFake(1, 100)
+    for (const [delta, expected] of [['-10', 90], ['-1', 89], ['1', 90], ['10', 100]]) {
+      await page.click(`button[data-seek="${delta}"]`)
+      t.equal(await page.evaluate(() => window.__fake.time), expected, `${delta} seconds`)
+      t.equal(await page.evaluate((k) => localStorage.getItem(k), `sb-position:${videoId}`), String(expected))
     }
-    return 'ok'
-  })()`)
-
-  const noneResult = pwEval(session, '(() => { onPlayerReady(); return [...window.__calls] })()')
-  t.same(noneResult, [])
-
-  pwEval(session, "(() => { localStorage.setItem('sb-position:TESTVIDEO57', '0'); window.__calls = []; return 'ok' })()")
-  const zeroResult = pwEval(session, '(() => { onPlayerReady(); return [...window.__calls] })()')
-  t.same(zeroResult, [])
-
-  pwEval(session, "(() => { localStorage.setItem('sb-position:TESTVIDEO57', '55'); window.__calls = []; return 'ok' })()")
-  const snapshot = pwEval(session, `(() => {
-    onPlayerReady()
-    const afterReady = { restoring: restoringPosition, calls: [...window.__calls] }
-    onPlayerStateChange({ data: YT.PlayerState.PLAYING })
-    const afterPlaying = { restoring: restoringPosition, calls: [...window.__calls] }
-    onPlayerStateChange({ data: YT.PlayerState.PAUSED })
-    const afterPaused = { restoring: restoringPosition, calls: [...window.__calls] }
-    return { afterReady, afterPlaying, afterPaused }
-  })()`)
-
-  t.equal(snapshot.afterReady.restoring, 55)
-  t.same(snapshot.afterReady.calls, ['mute', 'playVideo'])
-
-  // getCurrentTime always answers 0 here. This stands in for a seekTo that has
-  // not settled. The page must not save that time over the saved position.
-  t.equal(snapshot.afterPlaying.restoring, 55)
-  t.same(snapshot.afterPlaying.calls, ['mute', 'playVideo', 'seekTo:55', 'pauseVideo'])
-  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO57')"), '55')
-
-  t.equal(snapshot.afterPaused.restoring, 0)
-  t.same(snapshot.afterPaused.calls, ['mute', 'playVideo', 'seekTo:55', 'pauseVideo', 'unMute'])
-  t.equal(pwEval(session, "localStorage.getItem('sb-position:TESTVIDEO57')"), '55')
-  t.end()
-})
-
-test('a row is coloured ready only when it holds a decided start and a postable track (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO55'
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow(), makeMergedRow()] })
-  const base = await startServer(t, dir)
-  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  const [readyRowId, startOnlyRowId, trackOnlyRowId] = before.rows.map((r) => r.id)
-
-  await fetch(`${base}/api/sets/${videoId}/rows/${readyRowId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ start: { seconds: 5, from: 'best' }, track: { artists: 'Real Artist', title: 'Real Title' } }),
-  })
-  await fetch(`${base}/api/sets/${videoId}/rows/${startOnlyRowId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ start: { seconds: 5, from: 'best' } }),
-  })
-  await fetch(`${base}/api/sets/${videoId}/rows/${trackOnlyRowId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ track: { artists: 'Real Artist', title: 'Real Title' } }),
+    await resetFake(1, 5)
+    await page.click('button[data-seek="-10"]')
+    t.equal(await page.evaluate(() => window.__fake.time), 0)
+    t.end()
   })
 
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 3"))
-
-  const classOf = (rowId) => pwEval(session, `document.querySelector('tr[data-row-id="${rowId}"]').className`)
-  t.match(classOf(readyRowId), /\brow-ready\b/)
-  t.notMatch(classOf(startOnlyRowId), /\brow-ready\b/)
-  t.notMatch(classOf(trackOnlyRowId), /\brow-ready\b/)
-  t.end()
-})
-
-test('a decided track hides the evidence line of the guess, but an alternative keeps its own (functional)', { skip: skipReason }, async (t) => {
-  const dir = makeEmptyDataDir(t)
-  const videoId = 'TESTVIDEO64'
-  const rowA = makeMergedRow()
-  const rowB = makeMergedRow({
-    variants: [
-      {
-        title: 'Primary Guess',
-        artist: 'Primary Artist',
-        start: 0,
-        end: 10,
-        tracklistify: [{ confidence: 90 }],
-        ripthatset: [{ count: 3 }],
-      },
-      {
-        title: 'Alt Guess',
-        artist: 'Alt Artist',
-        start: 20,
-        end: 30,
-        tracklistify: [],
-        ripthatset: [{ count: 4 }],
-      },
-    ],
-  })
-  writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [rowA, rowB] })
-  const base = await startServer(t, dir)
-  const before = await (await fetch(`${base}/api/sets/${videoId}`)).json()
-  await fetch(`${base}/api/sets/${videoId}/rows/${before.rows[1].id}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ track: { artists: 'Real Artist', title: 'Real Title' } }),
+  await t.test('a plain click on a time reads the player state: it plays an unstarted player, only seeks a playing or paused one', async (t) => {
+    const small = `${rowSel(target())} a.jump-link.earliest`
+    const seconds = Number(await page.getAttribute(small, 'data-t'))
+    await resetFake(-1, 0)
+    await page.click(small)
+    t.same(await fakeCalls(), [`seek:${seconds}`, 'play'])
+    await page.click(`${rowSel(target())} a.jump-link.latest`)
+    t.equal((await fakeCalls()).filter((c) => c === 'play').length, 1, 'a playing player gets no second play')
+    await resetFake(2, 0)
+    await page.click(small)
+    t.same(await fakeCalls(), [`seek:${seconds}`], 'a paused player is not forced to play')
+    t.end()
   })
 
-  const session = await openPage(t, `${base}/sets/${videoId}`)
-  await waitUntil(() => pwEval(session, "document.querySelectorAll('tbody tr').length === 2"))
+  await t.test('a click on a time, with or without shift, saves no decision', async (t) => {
+    const small = `${rowSel(target())} a.jump-link.earliest`
+    await page.keyboard.down('Shift')
+    await page.click(small)
+    await page.keyboard.up('Shift')
+    await settle()
+    t.equal((await api('')).rows[index].start, null)
+    t.end()
+  })
 
-  const firstRowEv = pwEval(session, "document.querySelectorAll('tbody tr')[0].querySelector('.ev')")
-  t.not(firstRowEv, null, 'an undecided row still shows the evidence line of its guess')
+  await t.test('a decided row hides its small times and shows undo; undo brings the computed times back', async (t) => {
+    const row = rowSel(target())
+    const seconds = Number(await page.getAttribute(`${row} a.jump-link.earliest`, 'data-t'))
+    await api('/rows/' + target().id, 'PATCH', { start: { seconds, from: 'earliest' } })
+    await refresh()
+    t.equal(await page.locator(`${row} a.jump-link.earliest`).count(), 0)
+    t.match(await page.getAttribute(`${row} a.jump-link.big`, 'class'), /\bdecided\b/)
+    t.equal(await page.getAttribute(`${row} a.jump-link.big`, 'data-t'), String(seconds))
+    await page.click(`${row} a.undo-link`)
+    await settle()
+    t.notMatch(await page.getAttribute(`${row} a.jump-link.big`, 'class'), /\bdecided\b/)
+    t.equal(await page.locator(`${row} a.jump-link.earliest`).count(), 1)
+    t.equal((await api('')).rows[index].start, null)
+    t.end()
+  })
 
-  const secondRowEv = pwEval(session, "document.querySelectorAll('tbody tr')[1].querySelector('.ev')")
-  t.equal(secondRowEv, null, 'a decided row hides the evidence line of its guess')
+  await t.test('the first decided row keeps a 00:00:00 link beside undo, a later decided row shows only undo', async (t) => {
+    await api('/rows/' + data.rows[0].id, 'PATCH', { start: { seconds: 3, from: 'typed' } })
+    await api('/rows/' + target().id, 'PATCH', { start: { seconds: 900, from: 'typed' } })
+    await refresh()
+    const first = await page.innerHTML(`${rowSel(data.rows[0])} .jump .small`)
+    t.match(first, /data-t="0"/)
+    t.match(first, /undo-link/)
+    const later = await page.innerHTML(`${rowSel(target())} .jump .small`)
+    t.notMatch(later, /data-t="0"/)
+    t.match(later, /undo-link/)
+    t.end()
+  })
 
-  const secondRowAlts = pwEval(session, "document.querySelectorAll('tbody tr')[1].querySelector('.alts').textContent")
-  t.match(secondRowAlts, /R 4 chunks/, 'the alternative keeps its own evidence line')
-  t.end()
+  await t.test('grab saves the time of a paused player and keeps the guess of the row; a playing player saves nothing and shows a message', async (t) => {
+    await api('/rows/' + target().id, 'PATCH', { start: null })
+    await refresh()
+    const row = rowSel(target())
+    const titleBefore = await page.textContent(`${row} td:nth-child(2) b`)
+    const guessesBefore = await page.$$eval(`${row} td.guesses .open-dialog`, (els) => els.map((el) => el.dataset.title))
+    const grabAt = Math.round(target().span.start) + 7
+
+    await resetFake(1, grabAt)
+    await clearToasts()
+    await page.click(`${row} a.grab-link`)
+    t.match((await toasts()).join(' '), /Pause the player/)
+    t.equal((await api('')).rows[index].start, null)
+
+    await resetFake(2, grabAt)
+    await page.click(`${row} a.grab-link`)
+    await settle()
+    t.match((await api('')).rows[index].start, { seconds: grabAt, from: 'grab' })
+    t.equal(await page.textContent(`${row} td:nth-child(2) b`), titleBefore, 'the guess stays in Track')
+    t.match(await page.getAttribute(`${row} a.jump-link.big`, 'class'), /\bdecided\b/)
+    t.ok(guessesBefore.every((title) => title !== undefined))
+    t.equal(await page.locator(`${row} td:nth-child(2) b .open-dialog[data-title]`).count(), 1)
+    t.end()
+  })
+
+  await t.test('an added empty row has no span and does not change the detections of the row above', async (t) => {
+    const aboveBefore = await page.$$eval(`${rowSel(target())} .open-dialog[data-title]`, (els) => els.map((el) => el.dataset.title))
+    await page.click(`${rowSel(target())} a.action-insert-below`)
+    await settle()
+    const after = await api('')
+    const added = after.rows[index + 1]
+    t.equal(added.span, null)
+    t.same(added.sources, [])
+    t.equal(await page.locator(`${rowSel(added)} .open-dialog[data-title]`).count(), 0)
+    const aboveAfter = await page.$$eval(`${rowSel(after.rows[index])} .open-dialog[data-title]`, (els) => els.map((el) => el.dataset.title))
+    t.same(aboveAfter.sort(), aboveBefore.sort())
+    await page.click(`${rowSel(added)} a.action-delete`)
+    await settle()
+    t.equal((await api('')).rows.length, data.rows.length)
+    t.end()
+  })
+
+  await t.test('a decided track shows the words of the owner and hides the evidence line of the guess', async (t) => {
+    const row = rowSel(target())
+    await api('/rows/' + target().id, 'PATCH', { track: { artists: 'Real Artist', title: 'Real Title' } })
+    await refresh()
+    const cell = await page.textContent(`${row} td:nth-child(2)`)
+    t.match(cell, /Real Title/)
+    t.match(cell, /Real Artist/)
+    const primary = variantTitles(target())[0]
+    t.notMatch(cell, new RegExp(primary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the guess is not in Track')
+    t.notMatch(cell, /\bT \d+×|\bR \d+ chunks/, 'no evidence line in Track')
+    const guessText = await page.$$eval(`${row} td.guesses .guess`, (els) => els.map((el) => el.textContent))
+    t.ok(guessText.length > 0 && guessText.some((g) => /\bT \d+×|\bR \d+ chunks/.test(g)), 'a guess in Other guesses keeps its evidence')
+    t.match(await page.getAttribute(row, 'class'), /\bdecided\b/)
+    t.end()
+  })
+
+  await t.test('a saved track that matches a guess shows that guess below it and hides it from Other guesses', async (t) => {
+    const row = rowSel(target())
+    const variant = target().rangeEntries.flatMap((e) => e.kind === 'track' ? e.variants : [])[0]
+    await api('/rows/' + target().id, 'PATCH', { track: { artists: variant.artist, title: variant.title.toUpperCase() } })
+    await refresh()
+    t.equal(await page.locator(`${row} .winning-guess`).count(), 1)
+    t.match(await page.textContent(`${row} .winning-guess`), new RegExp(variant.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    t.equal(await page.locator(`${row} td.guesses .guess`).filter({ hasText: variant.title }).count(), 0)
+    t.end()
+  })
+
+  await t.test('a failed save shows a message with the status code', async (t) => {
+    await reset()
+    const row = data.rows[data.rows.length - 1]
+    await api('/rows/' + row.id, 'DELETE')
+    await clearToasts()
+    await page.click(`${rowSel(row)} a.grab-link`)
+    await settle()
+    t.match((await toasts()).join(' '), /404/)
+    await refresh()
+    data = await api('')
+    t.end()
+  })
+
+  await t.test('the space bar plays and pauses, but not while the dialog is open or the user types', async (t) => {
+    await resetFake(2, 0)
+    await page.evaluate(() => document.activeElement && document.activeElement.blur())
+    await page.keyboard.press('Space')
+    t.same(await fakeCalls(), ['play'])
+    await page.keyboard.press('Space')
+    t.same(await fakeCalls(), ['play', 'pause'])
+
+    await resetFake(2, 0)
+    await page.click(`${rowSel(data.rows[0])} td:nth-child(2) b .open-dialog`)
+    await page.keyboard.press('Space')
+    t.same(await fakeCalls(), [], 'nothing while the dialog is open')
+    await page.fill('#track-dialog [name=note]', 'a b')
+    t.same(await fakeCalls(), [])
+    await page.keyboard.press('Escape')
+
+    await page.evaluate(() => {
+      const input = document.createElement('input')
+      input.id = 'typing'
+      document.body.append(input)
+      input.focus()
+    })
+    await page.keyboard.press('Space')
+    t.same(await fakeCalls(), [], 'nothing while the user types in an input')
+    await page.evaluate(() => document.getElementById('typing').remove())
+    t.end()
+  })
+
+  await t.test('the saved position names its own video', async (t) => {
+    t.equal(await page.evaluate(() => POSITION_KEY), `sb-position:${videoId}`)
+    await page.evaluate(() => savePosition(77))
+    t.equal(await page.evaluate((k) => localStorage.getItem(k), `sb-position:${videoId}`), '77')
+    await page.evaluate(() => localStorage.setItem('sb-position:OTHERVIDEO01', '200'))
+    t.equal(await page.evaluate(() => loadSavedPosition()), 77)
+    t.equal(await page.evaluate(() => localStorage.getItem('sb-position:OTHERVIDEO01')), '200')
+    t.end()
+  })
+
+  await t.test('on load a saved position mutes, plays, seeks, pauses and unmutes once; none or zero leaves the player alone', async (t) => {
+    const key = `sb-position:${videoId}`
+    await page.evaluate((k) => localStorage.removeItem(k), key)
+    await resetFake(-1, 0)
+    await page.evaluate(() => onPlayerReady())
+    t.same(await fakeCalls(), [])
+
+    await page.evaluate((k) => localStorage.setItem(k, '0'), key)
+    await page.evaluate(() => onPlayerReady())
+    t.same(await fakeCalls(), [])
+
+    await page.evaluate((k) => localStorage.setItem(k, '55'), key)
+    await page.evaluate(() => onPlayerReady())
+    t.same(await fakeCalls(), ['mute', 'play'])
+    t.equal(await page.evaluate(() => restoringPosition), 55)
+    await page.evaluate(() => onPlayerStateChange({ data: YT.PlayerState.PLAYING }))
+    t.same(await fakeCalls(), ['mute', 'play', 'seek:55', 'pause'])
+    t.equal(await page.evaluate((k) => localStorage.getItem(k), key), '55', 'the page does not save an unsettled time')
+    await page.evaluate(() => onPlayerStateChange({ data: YT.PlayerState.PAUSED }))
+    t.same(await fakeCalls(), ['mute', 'play', 'seek:55', 'pause', 'unMute'])
+    t.equal(await page.evaluate(() => restoringPosition), 0)
+    t.end()
+  })
+
+  t.same(pageErrors, [], 'the page raised no script error')
 })
