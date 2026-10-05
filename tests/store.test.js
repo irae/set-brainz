@@ -315,6 +315,38 @@ test('store range entries (functional)', (t) => {
     t.end()
   })
 
+  t.test('a gap that overlaps the span is listed, and a gap after the span is not', (t) => {
+    const own = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('Own', 100)] })
+    const gap = makeMergedRow({ kind: 'gap', earliest: 150, best: 150, latest: 250, variants: [] })
+    const farGap = makeMergedRow({ kind: 'gap', earliest: 400, best: 400, latest: 500, variants: [] })
+    const next = makeMergedRow({ earliest: 300, best: 300, latest: 310, variants: [variant('Next', 300)] })
+    const result = setup(t, [own, gap, farGap, next], [
+      { sources: [own.uuid], start: { seconds: 100, from: 'typed' } },
+      { sources: [next.uuid] },
+    ])
+    t.same(titles(result.rows[0]), ['Own', 'gap'])
+    t.end()
+  })
+
+  t.test('the decided start wins over an earlier guess in the span start', (t) => {
+    const own = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('Own', 100)] })
+    const result = setup(t, [own], [{ sources: [own.uuid], start: { seconds: 130, from: 'typed' } }])
+    t.same(result.rows[0].span, { start: 130, end: 3600 })
+    t.end()
+  })
+
+  t.test('a merged row spans from the earliest of both sources and lists both', async (t) => {
+    const a = makeMergedRow({ earliest: 100, best: 100, latest: 110, variants: [variant('A', 100)] })
+    const b = makeMergedRow({ earliest: 150, best: 150, latest: 160, variants: [variant('B', 150)] })
+    const c = makeMergedRow({ earliest: 300, best: 300, latest: 310, variants: [variant('C', 300)] })
+    const before = setup(t, [a, b, c], [{ sources: [a.uuid] }, { sources: [b.uuid] }, { sources: [c.uuid] }])
+    await mergeRow('TESTVIDEO' + videoNumber, before.rows[1].id, 'up')
+    const after = getSet('TESTVIDEO' + videoNumber)
+    t.same(after.rows[0].span, { start: 100, end: 300 })
+    t.same(titles(after.rows[0]), ['A', 'B'])
+    t.end()
+  })
+
   t.end()
 })
 
@@ -415,7 +447,7 @@ test('store 1001Tracklists fields (functional)', (t) => {
   t.test('updateRow accepts a track with links and the file holds it', async (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
-    const videoId = 'TESTVIDEO31'
+    const videoId = 'TESTVIDEO91'
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
     const before = getSet(videoId)
     const rowId = before.rows[0].id
@@ -432,7 +464,7 @@ test('store 1001Tracklists fields (functional)', (t) => {
   t.test('updateRow rejects a link with an unknown kind', async (t) => {
     const dir = makeEmptyDataDir(t)
     useDataDir(dir)
-    const videoId = 'TESTVIDEO32'
+    const videoId = 'TESTVIDEO92'
     writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
     const before = getSet(videoId)
     const rowId = before.rows[0].id
@@ -852,6 +884,47 @@ test('store changes (functional)', (t) => {
     t.same(after.rows[0].start, { seconds: 10, from: 'best' })
     t.same(after.rows[0].track, { artists: 'Earlier Artist', title: 'Earlier Title' })
     t.equal(after.rows[0].note, 'earlier note')
+    t.end()
+  })
+
+  t.test('a merge down never turns a decided surviving row into an undecided one', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO95'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow(), makeMergedRow()] })
+    const before = getSet(videoId)
+    await updateRow(videoId, before.rows[0].id, {
+      start: { seconds: 10, from: 'best' },
+      track: { artists: 'Kept Artist', title: 'Kept Title' },
+      note: 'kept note',
+    })
+
+    await mergeRow(videoId, before.rows[0].id, 'down')
+    const after = getSet(videoId)
+
+    t.equal(after.rows.length, 1)
+    t.same(after.rows[0].start, { seconds: 10, from: 'best' })
+    t.same(after.rows[0].track, { artists: 'Kept Artist', title: 'Kept Title' })
+    t.equal(after.rows[0].note, 'kept note')
+    t.end()
+  })
+
+  t.test('it merges an empty added row with a sourced row without a min or max failure', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    useDataDir(dir)
+    const videoId = 'TESTVIDEO96'
+    writeMergedFile(dir, videoId, '20260101T000000Z-x.json', { rows: [makeMergedRow()] })
+    const before = getSet(videoId)
+    await insertEmptyRow(videoId, before.rows[0].id, 'above')
+    const added = getSet(videoId)
+    t.equal(added.rows[0].span, null)
+
+    await mergeRow(videoId, added.rows[0].id, 'down')
+    const after = getSet(videoId)
+
+    t.equal(after.rows.length, 1)
+    t.equal(after.rows[0].merged.length, 1)
+    t.not(after.rows[0].span, null)
     t.end()
   })
 
