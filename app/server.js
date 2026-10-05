@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, exportableRows, createSourceSet, getSourceSet, getTracklistUrl, updateSourceSet } from './store.js'
 import { postRow as realPostRow } from './1001-post.js'
+import { fetchPreview as realFetchPreview } from './link-preview.js'
 
 const require = createRequire(import.meta.url)
 const defaultPublicDir = join(dirname(fileURLToPath(import.meta.url)), 'public')
@@ -100,7 +101,7 @@ const STATUS_BY_CODE = {
 
 const postsInFlight = new Set()
 
-export function createApp({ postRow = realPostRow } = {}) {
+export function createApp({ postRow = realPostRow, fetchPreview = realFetchPreview } = {}) {
   const app = express()
   const dir = publicDir()
 
@@ -117,6 +118,14 @@ export function createApp({ postRow = realPostRow } = {}) {
   app.get('/sets/:videoId/edit', (req, res) => sendShell(res, 'form.html'))
   app.get('/sets/:videoId', (req, res) => sendShell(res, 'set.html'))
   app.get('/vendor/jquery.js', (req, res) => res.sendFile(jqueryPath))
+
+  app.get('/api/link-preview', async (req, res) => {
+    try {
+      res.json(await fetchPreview(String(req.query.url || '')))
+    } catch {
+      res.status(204).end()
+    }
+  })
 
   app.get('/api/sets', (req, res) => {
     res.json(listSets())
