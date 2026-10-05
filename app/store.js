@@ -618,3 +618,33 @@ export function isReadyToPost(row, number) {
 export function exportableRows(rows) {
   return rows.filter((row) => hasPostFields(row, row.number))
 }
+
+function cueText(seconds) {
+  const whole = Math.round(seconds)
+  const hours = Math.floor(whole / 3600)
+  const minutes = String(Math.floor((whole % 3600) / 60)).padStart(2, '0')
+  const rest = String(whole % 60).padStart(2, '0')
+  return hours ? `${hours}:${minutes}:${rest}` : `${minutes}:${rest}`
+}
+
+export function tracklistText(videoId) {
+  const doc = loadDecisions(videoId)
+  if (!doc) {
+    throw storeError('unknown_video', `no merged results for video id ${videoId}`)
+  }
+  const lines = doc.rows
+    .filter((row) => row.start !== null && row.track !== null)
+    .sort((a, b) => a.start.seconds - b.start.seconds)
+    .flatMap((row) => {
+      const track = row.track
+      const name = track.isId
+        ? 'ID - ID'
+        : [track.artists?.trim(), [track.title?.trim(), track.version?.trim() && `(${track.version.trim()})`].filter(Boolean).join(' ')]
+          .filter(Boolean)
+          .join(' - ')
+      if (!name) return []
+      const label = track.label?.trim()
+      return [`[${cueText(row.start.seconds)}] ${name}${label ? ` [${label}]` : ''}`]
+    })
+  return [getSourceSet(videoId).title, '', ...lines].join('\n') + '\n'
+}

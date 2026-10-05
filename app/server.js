@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, exportableRows, createSourceSet, getSourceSet, getTracklistUrl, updateSourceSet } from './store.js'
+import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, exportableRows, createSourceSet, getSourceSet, getTracklistUrl, updateSourceSet, tracklistText } from './store.js'
 import { postRow as realPostRow } from './1001-post.js'
 import { fetchPreview as realFetchPreview } from './link-preview.js'
 
@@ -242,6 +242,10 @@ export function createApp({ postRow = realPostRow, fetchPreview = realFetchPrevi
       .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\r\n') + '\r\n'
     res.type('text/csv').attachment(`${encodeURIComponent(req.params.videoId)}.csv`).send(csv)
+  })
+
+  app.get('/api/sets/:videoId/tracklist.txt', (req, res) => {
+    res.type('text/plain').send(tracklistText(req.params.videoId))
   })
 
   app.patch('/api/sets/:videoId/rows/:rowId', (req, res) => {

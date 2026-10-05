@@ -25,11 +25,12 @@ function rowHtml(entry) {
     : ''
   const source = `<a href="${escapeHtml(entry.sourceUrl)}" target="_blank" rel="noopener">${entry.youtubeUrl ? 'YouTube' : 'Source'}</a>`
   const csv = entry.mergedFile ? `<a href="/api/sets/${encodeURIComponent(entry.videoId)}/export.csv">CSV</a>` : ''
+  const text = entry.mergedFile ? `<a href="#" class="tracklist-text" data-video-id="${escapeHtml(entry.videoId)}">Text</a>` : ''
   return `<tr>
 <td><a href="${href}">${escapeHtml(entry.title)}</a><div class="small">${escapeHtml(entry.videoId)}</div></td>
 <td>${escapeHtml(statusText(entry))}</td>
 <td>${entry.decidedCount} / ${entry.rowCount} decided</td>
-<td>${[tracklist, source, csv, `<a href="${edit}">Edit</a>`].filter(Boolean).join(' · ')}${note}</td>
+<td>${[tracklist, source, csv, text, `<a href="${edit}">Edit</a>`].filter(Boolean).join(' · ')}${note}</td>
 </tr>`
 }
 
@@ -41,3 +42,26 @@ $.getJSON('/api/sets')
   .fail((xhr) => {
     $('h1').after(`<p class="note">Could not load the set list (${xhr.status}). Check the server, then reload the page.</p>`)
   })
+
+$(document).on('click', 'a.tracklist-text', function (event) {
+  event.preventDefault()
+  const dialogEl = document.getElementById('text-dialog')
+  const $area = $('#text-dialog textarea').val('')
+  $('#text-dialog .copy-status').text('')
+  $.get({ url: `/api/sets/${encodeURIComponent($(this).data('videoId'))}/tracklist.txt`, dataType: 'text' })
+    .done((text) => {
+      $area.val(text)
+      dialogEl.showModal()
+    })
+    .fail((xhr) => {
+      $('h1').after(`<p class="note">Could not load the tracklist text (${xhr.status}). Check the server, then try again.</p>`)
+    })
+})
+
+$('#text-dialog .copy').on('click', () => {
+  navigator.clipboard.writeText($('#text-dialog textarea').val())
+    .then(() => $('#text-dialog .copy-status').text('Copied'))
+    .catch((error) => $('#text-dialog .copy-status').text(`Copy failed: ${error.message}`))
+})
+
+$('#text-dialog .close').on('click', () => document.getElementById('text-dialog').close())
