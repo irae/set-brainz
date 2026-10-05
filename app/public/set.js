@@ -101,6 +101,23 @@ function variantLinks(variant) {
   return [search, ...direct].filter(Boolean).join(' ')
 }
 
+function confirmedLinkHtml(row) {
+  const link = row.track && row.track.links && row.track.links[0]
+  if (!link) return ''
+  let url
+  try {
+    url = new URL(link.url)
+  } catch {
+    return ''
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+  const labels = url.hostname.replace(/^www\./, '').split('.')
+  const twoPartSuffix = labels.length > 2 && labels[labels.length - 1].length === 2 && labels[labels.length - 2].length <= 3
+  const name = { spotify: 'Spotify', youtubeMusic: 'YT Music', apple: 'Apple Music' }[link.kind]
+    || labels[Math.max(0, labels.length - (twoPartSuffix ? 3 : 2))]
+  return `<span class="search-links confirmed-link"><a href="${escapeHtml(url.href)}" target="_blank" rel="noopener">${escapeHtml(name)}</a></span>`
+}
+
 function linksSpan(html) {
   return html ? `<span class="search-links">${html}</span>` : ''
 }
@@ -228,7 +245,7 @@ function buildEmptyRow(row, index) {
   const guessEvidenceHtml = bestGuess ? `<div class="small">${jumpLink(bestGuess.start, 'guess-time')}–${jumpLink(bestGuess.end, 'guess-time')} ${variantEvidence(bestGuess)}</div>` : ''
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${numberHtml(row)}${jumpHtml}${GRAB_LINK_HTML}${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess?.title, bestGuess?.artist)}${titleHtml}</span></b>${guessLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${guessEvidenceHtml}
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess?.title, bestGuess?.artist)}${titleHtml}</span></b>${confirmedLinkHtml(row)}${guessLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${guessEvidenceHtml}
 ${rowActionsHtml(row)}${winningSuggestionHtml(winner)}</td>${guessCellHtml(row, winner || (!row.track ? bestGuess : null))}</tr>`
 }
 
@@ -254,7 +271,7 @@ function buildGapRow(row, index) {
   return `<tr class="${rowClasses(row, 'row-gap')}" data-row-id="${row.id}">
 <td class="jump">${numberHtml(row)}${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess?.title, bestGuess?.artist)}${titleHtml}</span></b>${guessLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${guessEvidenceHtml}${row.track ? '' : `<div class="small">${minutes} min ${secs} s with no match</div>`}
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess?.title, bestGuess?.artist)}${titleHtml}</span></b>${confirmedLinkHtml(row)}${guessLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${guessEvidenceHtml}${row.track ? '' : `<div class="small">${minutes} min ${secs} s with no match</div>`}
 ${rowActionsHtml(row)}${winningSuggestionHtml(winner)}</td>${guessCellHtml(row, winner || (!row.track ? bestGuess : null))}</tr>`
 }
 
@@ -288,7 +305,7 @@ function buildTrackRow(row, index, lowConfidence) {
   return `<tr class="${rowClasses(row, cls)}" data-row-id="${row.id}">
 <td class="jump">${numberHtml(row)}${jumpLink(bigSeconds, bigCss)}${GRAB_LINK_HTML}
 ${smallLine}</td>
-<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess.title, bestGuess.artist)}${titleHtml}</span></b>${titleLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${evidenceHtml}${rowActionsHtml(row)}${winningSuggestionHtml(winner)}</td>${guessCellHtml(row, winner || (!row.track ? bestGuess : null))}</tr>`
+<td>${decidedMark(row)}<b>${ownTitleSpan(row, bestGuess.title, bestGuess.artist)}${titleHtml}</span></b>${confirmedLinkHtml(row)}${titleLinksHtml}${artistHtml ? `<div class="small">${artistHtml}</div>` : ''}${evidenceHtml}${rowActionsHtml(row)}${winningSuggestionHtml(winner)}</td>${guessCellHtml(row, winner || (!row.track ? bestGuess : null))}</tr>`
 }
 
 function buildRowHtml(row, index, lowConfidence) {

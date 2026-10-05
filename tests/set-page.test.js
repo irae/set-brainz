@@ -335,6 +335,29 @@ test('the set page, one browser and one page, in sequence', { bail: true, timeou
     t.end()
   })
 
+  await t.test('a decided row with a link shows the service name as an always visible link; no link shows none', async (t) => {
+    const row = rowSel(target())
+    const cases = [
+      ['spotify', 'https://open.spotify.com/track/TESTTRACK01', 'Spotify'],
+      ['other', 'https://www.beatport.com/track/test/1', 'beatport'],
+      ['other', 'https://shop.example.co.uk/x', 'example'],
+    ]
+    for (const [kind, url, name] of cases) {
+      await api('/rows/' + target().id, 'PATCH', { track: { artists: 'Link Artist', title: 'Link Title', links: [{ kind, url }] } })
+      await refresh()
+      const link = page.locator(`${row} td:nth-child(2) .confirmed-link a`)
+      t.equal(await link.textContent(), name)
+      t.equal(await link.getAttribute('href'), url)
+      t.equal(await link.getAttribute('target'), '_blank')
+      t.equal(await link.getAttribute('rel'), 'noopener')
+      t.ok(await link.isVisible(), 'visible without hover')
+    }
+    await api('/rows/' + target().id, 'PATCH', { track: { artists: 'Link Artist', title: 'Link Title', links: [] } })
+    await refresh()
+    t.equal(await page.locator(`${row} .confirmed-link`).count(), 0)
+    t.end()
+  })
+
   await t.test('a saved track that matches a guess shows that guess below it and hides it from Other guesses', async (t) => {
     const row = rowSel(target())
     const variant = target().rangeEntries.flatMap((e) => e.kind === 'track' ? e.variants : [])[0]
