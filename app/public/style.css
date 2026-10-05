@@ -258,6 +258,7 @@ dialog#track-dialog label {
 }
 
 dialog#track-dialog input[type="text"],
+dialog#track-dialog input[type="url"],
 dialog#track-dialog textarea {
   width: 100%;
   box-sizing: border-box;

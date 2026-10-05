@@ -120,10 +120,11 @@ function decidedMark(row) {
 }
 
 function rangeScoredVariants(row) {
+  const own = new Set(row.merged.map((entry) => entry.uuid))
   return (row.rangeEntries || row.merged)
     .filter((entry) => entry.kind === 'track')
-    .flatMap((entry) => entry.variants.map((variant) => ({ variant, score: variantScore(variant) })))
-    .sort((a, b) => b.score - a.score)
+    .flatMap((entry) => entry.variants.map((variant) => ({ variant, score: variantScore(variant), own: own.has(entry.uuid) })))
+    .sort((a, b) => b.own - a.own || b.score - a.score)
 }
 
 function normalizedTrackText(text) {
