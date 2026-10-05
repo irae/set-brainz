@@ -444,5 +444,28 @@ test('the set page, one browser and one page, in sequence', { bail: true, timeou
     t.end()
   })
 
+  await t.test('a reload scrolls to the row before the row that holds the saved time', async (t) => {
+    const key = `sb-position:${videoId}`
+    const spans = data.rows.map((row, i) => ({ row, i })).filter(({ row }) => row.span)
+    const pick = spans.find(({ row, i }) => i >= 3 && spans.every((o) => o.i === i || o.row.span.start !== row.span.start))
+    t.ok(pick, 'a row with a unique span start exists')
+    const previous = data.rows[pick.i - 1]
+    await page.evaluate(([k, v]) => localStorage.setItem(k, String(v)), [key, pick.row.span.start])
+    await page.reload()
+    await page.waitForFunction(() => window.__fake && document.querySelector('#tracklist tbody tr'))
+    await settle()
+    const playerBottom = await page.evaluate(() => document.getElementById('player').getBoundingClientRect().bottom)
+    const prevBox = await page.locator(rowSel(previous)).boundingBox()
+    const snappedBox = await page.locator(rowSel(pick.row)).boundingBox()
+    const viewport = page.viewportSize().height
+    t.ok(Math.abs(prevBox.y - playerBottom) < 3, 'the previous row sits under the player')
+    t.ok(snappedBox.y >= playerBottom && snappedBox.y + snappedBox.height <= viewport, 'the snapped row is visible')
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await refresh()
+    t.equal(await page.evaluate(() => window.scrollY), 0, 'a redraw does not scroll')
+    await page.evaluate((k) => localStorage.removeItem(k), key)
+    t.end()
+  })
+
   t.same(pageErrors, [], 'the page raised no script error')
 })

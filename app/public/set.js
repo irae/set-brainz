@@ -379,6 +379,7 @@ function initializePlayer(youtubeId) {
   playerInitialized = true
   sourceYoutubeId = youtubeId
   if (youtubeId) {
+    document.getElementById('yt').style.height = '360px'
     const script = document.createElement('script')
     script.src = 'https://www.youtube.com/iframe_api'
     document.head.append(script)
@@ -403,6 +404,8 @@ function apiUrl(rowId, suffix) {
   return `/api/sets/${encodeURIComponent(VIDEO_ID)}/rows/${encodeURIComponent(rowId)}${suffix || ''}`
 }
 
+let scrolledToSaved = false
+
 function loadAndRender() {
   $.getJSON(`/api/sets/${encodeURIComponent(VIDEO_ID)}`)
     .done((data) => {
@@ -412,6 +415,16 @@ function loadAndRender() {
       const $tbody = $('#tracklist tbody')
       $tbody.empty()
       data.rows.forEach((row, index) => $tbody.append(buildRowHtml(row, index, data.params.lowConfidence)))
+      if (scrolledToSaved) return
+      scrolledToSaved = true
+      const saved = loadSavedPosition()
+      if (saved === null || !data.rows.length) return
+      let snapped = -1
+      data.rows.forEach((row, index) => {
+        if (row.span && row.span.start <= saved) snapped = index
+      })
+      const target = data.rows[Math.max(snapped - 1, 0)]
+      window.scrollTo(0, $(`tr[data-row-id="${target.id}"]`).offset().top - $('#player').outerHeight())
     })
     .fail((jqXHR) => {
       showMessage(withStatus('Could not load this set. Check the server, then reload the page.', jqXHR))
