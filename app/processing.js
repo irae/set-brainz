@@ -1,10 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const running = new Set()
 
 function dataDir() {
   return resolve(process.env.SETBRAINZ_DATA_DIR || 'data')
@@ -48,15 +47,13 @@ function writeStatus(status) {
   renameSync(temp, path)
 }
 
-function run(command, args, onSpawn) {
+function run(command, args) {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(command, args, {
       cwd: root,
       env: { ...process.env, SETBRAINZ_DATA_DIR: dataDir() },
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
     })
-    onSpawn(child.pid)
     let output = ''
     child.stdout.on('data', (chunk) => { output = `${output}${chunk}`.slice(-4000) })
     child.stderr.on('data', (chunk) => { output = `${output}${chunk}`.slice(-4000) })
@@ -70,7 +67,6 @@ function run(command, args, onSpawn) {
 
 function begin(videoId, phase, initialStep) {
   validateVideoId(videoId)
-  if (running.has(videoId)) throw Object.assign(new Error('work is already running for this set'), { code: 'processing_in_progress' })
   const previous = readStatus(videoId)
   if (previous?.status === 'queued' || previous?.status === 'running') {
     if (processGroupExists(previous.processGroupId)) {
@@ -86,7 +82,6 @@ function begin(videoId, phase, initialStep) {
   const now = new Date().toISOString()
   const status = { videoId, phase, status: 'queued', step: initialStep, startedAt: now, updatedAt: now }
   writeStatus(status)
-  running.add(videoId)
   return status
 }
 
@@ -106,18 +101,30 @@ function assertNoResults(videoId) {
 }
 
 async function execute(status, tasks) {
-  update(status, { status: 'running' })
+  update(status, { status: 'running', processGroupId: process.pid })
   try {
     for (const [step, command, args] of tasks) {
       update(status, { step })
-      await run(command, args, (processGroupId) => update(status, { processGroupId }))
+      await run(command, args)
     }
     update(status, { status: 'completed', step: null, finishedAt: new Date().toISOString(), processGroupId: null })
   } catch (error) {
     update(status, { status: 'failed', finishedAt: new Date().toISOString(), processGroupId: null, error: error.message })
-  } finally {
-    running.delete(status.videoId)
   }
+}
+
+export function runJob(videoId, tasks) {
+  return execute(readStatus(videoId), tasks)
+}
+
+function launch(status, tasks) {
+  const runner = join(root, 'app/job-runner.js')
+  const result = spawnSync('sh', ['-c', 'setsid "$@" >/dev/null 2>&1 </dev/null & echo $!', 'sh', process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
+    cwd: root,
+    env: { ...process.env, SETBRAINZ_DATA_DIR: dataDir() },
+    encoding: 'utf8',
+  })
+  update(status, { processGroupId: Number(result.stdout) })
 }
 
 export function startDownload(videoId, sourceUrl) {
@@ -129,14 +136,14 @@ export function startDownload(videoId, sourceUrl) {
     throw Object.assign(new Error(`audio already exists for set ${videoId}`), { code: 'audio_exists' })
   }
   const status = begin(videoId, 'download', 'download')
-  void execute(status, [['download', 'bash', [join(root, 'scripts/download-audio.sh'), videoId, sourceUrl]]])
+  launch(status, [['download', 'bash', [join(root, 'scripts/download-audio.sh'), videoId, sourceUrl]]])
   return status
 }
 
 export function startProcessing(videoId) {
   const downloadStatus = readStatus(videoId)
   if (downloadStatus?.phase === 'download' && downloadStatus.status !== 'completed') {
-    if ((downloadStatus.status === 'queued' || downloadStatus.status === 'running') && !running.has(videoId) && !processGroupExists(downloadStatus.processGroupId)) {
+    if ((downloadStatus.status === 'queued' || downloadStatus.status === 'running') && !processGroupExists(downloadStatus.processGroupId)) {
       update(downloadStatus, {
         status: 'failed',
         finishedAt: new Date().toISOString(),
@@ -151,7 +158,7 @@ export function startProcessing(videoId) {
   const data = dataDir()
   assertNoResults(videoId)
   const status = begin(videoId, 'process', 'tracklistify')
-  void execute(status, [
+  launch(status, [
     ['tracklistify', 'bash', [join(root, 'scripts/run-tracklistify.sh'), videoId]],
     ['ripthatset', 'bash', [join(root, 'scripts/run-ripthatset.sh'), videoId]],
     ['merge', 'python3', [join(root, 'scripts/merge-results.py'), videoId]],
@@ -162,7 +169,7 @@ export function startProcessing(videoId) {
 export function getProcessingStatus(videoId) {
   const status = readStatus(videoId)
   if (!status) return { videoId, status: 'idle', audioExists: mp3Files(videoId).length > 0 }
-  if ((status.status === 'queued' || status.status === 'running') && !running.has(videoId) && !processGroupExists(status.processGroupId)) {
+  if ((status.status === 'queued' || status.status === 'running') && !processGroupExists(status.processGroupId)) {
     update(status, {
       status: 'failed',
       finishedAt: new Date().toISOString(),
