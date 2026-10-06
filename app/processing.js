@@ -119,7 +119,7 @@ export function runJob(videoId, tasks) {
 
 function launch(status, tasks) {
   const runner = join(root, 'app/job-runner.js')
-  const result = spawnSync('sh', ['-c', 'setsid "$@" >/dev/null 2>&1 </dev/null & echo $!', 'sh', process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
+  const result = spawnSync('sh', ['-c', 'setsid "$@" >/dev/null 2>&1 </dev/null & pid=$!; while kill -0 $pid 2>/dev/null && ! kill -0 -- -$pid 2>/dev/null; do sleep 0.01; done; echo $pid', 'sh', process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
     cwd: root,
     env: { ...process.env, SETBRAINZ_DATA_DIR: dataDir() },
     encoding: 'utf8',
