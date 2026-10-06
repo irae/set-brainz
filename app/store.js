@@ -638,15 +638,15 @@ export function tracklistText(videoId, format = 'youtube') {
     .sort((a, b) => a.start.seconds - b.start.seconds)
     .flatMap((row) => {
       const track = row.track
-      let artists = track.artists?.trim()
+      let title = track.title?.trim()
       let version = track.version?.trim()
       if (cue) {
-        artists = artists?.replace(/\s*,\s*|\s+&\s+/g, ', ')
-        if (/^original mix$/i.test(version)) version = ''
+        title = title?.replace(/\s*(\(\s*original\s+mix\s*\)|\[\s*original\s+mix\s*\]|\boriginal\s+mix)$/i, '')
+        if (/^(\(\s*original\s+mix\s*\)|\[\s*original\s+mix\s*\]|original\s+mix)$/i.test(version)) version = ''
       }
       const name = track.isId
         ? 'ID - ID'
-        : [artists, [track.title?.trim(), version && `(${version})`].filter(Boolean).join(' ')]
+        : [track.artists?.trim(), [title, version && `(${version})`].filter(Boolean).join(' ')]
           .filter(Boolean)
           .join(' - ')
       if (!name) return []

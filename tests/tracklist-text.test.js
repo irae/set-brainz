@@ -73,13 +73,27 @@ test('tracklist text (functional)', (t) => {
     t.equal(body, '01. 00:10 Fixture A - Track A\n02. 00:20 Fixture B - Track B\n03. 00:30 Fixture C - Track C (Fixture Original Mix)\n')
   })
 
-  t.test('the cue format joins several artists with a comma and a space', async (t) => {
+  t.test('the cue format prints the artist text as the data holds it', async (t) => {
     const { body } = await textFor(t, [
       row('a', 10, { artists: 'Fixture A & Fixture B', title: 'Track A' }),
-      row('b', 20, { artists: 'Fixture C,Fixture D & Fixture E', title: 'Track B' }),
-      row('c', 30, { artists: 'Fixture F, Fixture G', title: 'Track C' }),
+      row('b', 20, { artists: 'Fixture C,Fixture D', title: 'Track B' }),
     ], '?format=cue')
-    t.equal(body, '01. 00:10 Fixture A, Fixture B - Track A\n02. 00:20 Fixture C, Fixture D, Fixture E - Track B\n03. 00:30 Fixture F, Fixture G - Track C\n')
+    t.equal(body, '01. 00:10 Fixture A & Fixture B - Track A\n02. 00:20 Fixture C,Fixture D - Track B\n')
+  })
+
+  t.test('the cue format drops an Original Mix that a service put at the end of the title', async (t) => {
+    const { body } = await textFor(t, [
+      row('a', 10, { artists: 'Fixture A', title: 'Track A (Original Mix)' }),
+      row('b', 20, { artists: 'Fixture B', title: 'Track B Original Mix' }),
+      row('c', 30, { artists: 'Fixture C', title: 'Track C [original  MIX]', version: '(Original Mix)' }),
+      row('d', 40, { artists: 'Fixture D', title: 'Track D (Extended Original Mix)' }),
+    ], '?format=cue')
+    t.equal(body, '01. 00:10 Fixture A - Track A\n02. 00:20 Fixture B - Track B\n03. 00:30 Fixture C - Track C\n04. 00:40 Fixture D - Track D (Extended Original Mix)\n')
+  })
+
+  t.test('an unknown format value gives the youtube format', async (t) => {
+    const { body } = await textFor(t, [row('a', 10, { artists: 'Fixture A', title: 'Track A' })], '?format=xml')
+    t.equal(body, 'Fixture Set @ Fixture Venue 2026\n\n[00:10] Fixture A - Track A\n')
   })
 
   t.test('the cue format prints nothing for a set with no decided rows', async (t) => {

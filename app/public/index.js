@@ -46,10 +46,18 @@ $.getJSON('/api/sets')
 function loadText(videoId, format) {
   $('#text-dialog .tab').removeClass('active').filter(`[data-format="${format}"]`).addClass('active')
   $('#text-dialog .copy-status').text('')
-  return $.get({ url: `/api/sets/${encodeURIComponent(videoId)}/tracklist.txt`, data: { format }, dataType: 'text' })
-    .done((text) => $('#text-dialog textarea').val(text))
+  $('#text-dialog textarea').val('')
+  const request = $.get({ url: `/api/sets/${encodeURIComponent(videoId)}/tracklist.txt`, data: { format }, dataType: 'text' })
+  $('#text-dialog').data('request', request)
+  return request
+    .done((text) => {
+      if ($('#text-dialog').data('request') === request) $('#text-dialog textarea').val(text)
+    })
     .fail((xhr) => {
-      $('h1').after(`<p class="note">Could not load the tracklist text (${xhr.status}). Check the server, then try again.</p>`)
+      if ($('#text-dialog').data('request') !== request) return
+      const message = `Could not load the tracklist text (${xhr.status}). Check the server, then try again.`
+      if (document.getElementById('text-dialog').open) $('#text-dialog .copy-status').text(message)
+      else $('h1').after(`<p class="note">${message}</p>`)
     })
 }
 
@@ -57,7 +65,6 @@ $(document).on('click', 'a.tracklist-text', function (event) {
   event.preventDefault()
   const videoId = $(this).data('videoId')
   $('#text-dialog').data('videoId', videoId)
-  $('#text-dialog textarea').val('')
   loadText(videoId, 'youtube').done(() => document.getElementById('text-dialog').showModal())
 })
 
