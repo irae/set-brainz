@@ -627,24 +627,31 @@ function cueText(seconds) {
   return hours ? `${hours}:${minutes}:${rest}` : `${minutes}:${rest}`
 }
 
-export function tracklistText(videoId) {
+export function tracklistText(videoId, format = 'youtube') {
   const doc = loadDecisions(videoId)
   if (!doc) {
     throw storeError('unknown_video', `no merged results for video id ${videoId}`)
   }
+  const cue = format === 'cue'
   const lines = doc.rows
     .filter((row) => row.start !== null && row.track !== null)
     .sort((a, b) => a.start.seconds - b.start.seconds)
     .flatMap((row) => {
       const track = row.track
+      let artists = track.artists?.trim()
+      let version = track.version?.trim()
+      if (cue) {
+        artists = artists?.replace(/\s*,\s*|\s+&\s+/g, ', ')
+        if (/^original mix$/i.test(version)) version = ''
+      }
       const name = track.isId
         ? 'ID - ID'
-        : [track.artists?.trim(), [track.title?.trim(), track.version?.trim() && `(${track.version.trim()})`].filter(Boolean).join(' ')]
+        : [artists, [track.title?.trim(), version && `(${version})`].filter(Boolean).join(' ')]
           .filter(Boolean)
           .join(' - ')
       if (!name) return []
-      const label = track.label?.trim()
-      return [`[${cueText(row.start.seconds)}] ${name}${label ? ` [${label}]` : ''}`]
+      return [{ time: cueText(row.start.seconds), name, label: track.label?.trim() }]
     })
-  return [getSourceSet(videoId).title, '', ...lines].join('\n') + '\n'
+  if (cue) return lines.map((line, index) => `${String(index + 1).padStart(2, '0')}. ${line.time} ${line.name}`).join('\n') + (lines.length ? '\n' : '')
+  return [getSourceSet(videoId).title, '', ...lines.map((line) => `[${line.time}] ${line.name}${line.label ? ` [${line.label}]` : ''}`)].join('\n') + '\n'
 }

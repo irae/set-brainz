@@ -43,19 +43,26 @@ $.getJSON('/api/sets')
     $('h1').after(`<p class="note">Could not load the set list (${xhr.status}). Check the server, then reload the page.</p>`)
   })
 
-$(document).on('click', 'a.tracklist-text', function (event) {
-  event.preventDefault()
-  const dialogEl = document.getElementById('text-dialog')
-  const $area = $('#text-dialog textarea').val('')
+function loadText(videoId, format) {
+  $('#text-dialog .tab').removeClass('active').filter(`[data-format="${format}"]`).addClass('active')
   $('#text-dialog .copy-status').text('')
-  $.get({ url: `/api/sets/${encodeURIComponent($(this).data('videoId'))}/tracklist.txt`, dataType: 'text' })
-    .done((text) => {
-      $area.val(text)
-      dialogEl.showModal()
-    })
+  return $.get({ url: `/api/sets/${encodeURIComponent(videoId)}/tracklist.txt`, data: { format }, dataType: 'text' })
+    .done((text) => $('#text-dialog textarea').val(text))
     .fail((xhr) => {
       $('h1').after(`<p class="note">Could not load the tracklist text (${xhr.status}). Check the server, then try again.</p>`)
     })
+}
+
+$(document).on('click', 'a.tracklist-text', function (event) {
+  event.preventDefault()
+  const videoId = $(this).data('videoId')
+  $('#text-dialog').data('videoId', videoId)
+  $('#text-dialog textarea').val('')
+  loadText(videoId, 'youtube').done(() => document.getElementById('text-dialog').showModal())
+})
+
+$('#text-dialog .tab').on('click', function () {
+  loadText($('#text-dialog').data('videoId'), $(this).data('format'))
 })
 
 $('#text-dialog .copy').on('click', () => {

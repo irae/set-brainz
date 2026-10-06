@@ -245,7 +245,7 @@ export function createApp({ postRow = realPostRow, fetchPreview = realFetchPrevi
   })
 
   app.get('/api/sets/:videoId/tracklist.txt', (req, res) => {
-    res.type('text/plain').send(tracklistText(req.params.videoId))
+    res.type('text/plain').send(tracklistText(req.params.videoId, req.query.format))
   })
 
   app.patch('/api/sets/:videoId/rows/:rowId', (req, res) => {
