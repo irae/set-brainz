@@ -18,7 +18,7 @@ function findRealDataDir() {
 
 export function buildRealSlice(t) {
   const real = findRealDataDir()
-  const videoId = readdirSync(join(real, 'merged')).sort()[0]
+  const videoId = readdirSync(join(real, 'merged')).sort().find((id) => existsSync(join(real, 'decisions', `${id}.json`)))
   const mergedName = readdirSync(join(real, 'merged', videoId)).filter((f) => f.endsWith('.json')).sort().pop()
   const merged = JSON.parse(readFileSync(join(real, 'merged', videoId, mergedName), 'utf8'))
   const rows = merged.rows.filter((row) => row.earliest < SLICE_SECONDS)
