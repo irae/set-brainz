@@ -53,6 +53,7 @@ All local data lives in `data/`. Third-party tool clones live in `tools/`. Git i
 | `data/audio/<set-id>/` | downloaded MP3 audio |
 | `data/runs/<set-id>/tracklistify/` | Tracklistify log and tracklist files |
 | `data/runs/<set-id>/ripthatset/` | RipThatSet log and JSON |
+| `data/runs/<set-id>/runner.log` | output of the job runner itself, appended on each run; it stays empty unless the runner crashes |
 | `data/merged/<set-id>/` | merged JSON files, one per merge |
 | `data/decisions/` | one decision file per video, holding its rows and tracks |
 | `data/views/<video-id>/` | old generated views, kept on disk, no script writes there now |

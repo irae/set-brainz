@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +18,10 @@ function jobPath(videoId) {
   return join(dataDir(), 'jobs', `${videoId}.json`)
 }
 
+function runnerLogPath(videoId) {
+  return join(dataDir(), 'runs', videoId, 'runner.log')
+}
+
 function readStatus(videoId) {
   const path = jobPath(videoId)
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null
@@ -31,6 +35,15 @@ function processGroupExists(groupId) {
   } catch (error) {
     return error.code === 'EPERM'
   }
+}
+
+function stoppedMessage(status) {
+  try {
+    if (statSync(runnerLogPath(status.videoId)).mtimeMs >= Date.parse(status.startedAt)) {
+      return `runner stopped, see runs/${status.videoId}/runner.log in the data folder`
+    }
+  } catch {}
+  return 'work stopped when the app server stopped'
 }
 
 function mp3Files(videoId) {
@@ -75,7 +88,7 @@ function begin(videoId, phase, initialStep) {
     update(previous, {
       status: 'failed',
       finishedAt: new Date().toISOString(),
-      error: 'work stopped when the app server stopped',
+      error: stoppedMessage(previous),
       processGroupId: null,
     })
   }
@@ -119,7 +132,9 @@ export function runJob(videoId, tasks) {
 
 function launch(status, tasks) {
   const runner = join(root, 'app/job-runner.js')
-  const result = spawnSync('sh', ['-c', 'setsid "$@" >/dev/null 2>&1 </dev/null & pid=$!; while kill -0 $pid 2>/dev/null && ! kill -0 -- -$pid 2>/dev/null; do sleep 0.01; done; echo $pid', 'sh', process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
+  const log = runnerLogPath(status.videoId)
+  mkdirSync(dirname(log), { recursive: true })
+  const result = spawnSync('sh', ['-c', 'log=$1; shift; setsid "$@" >>"$log" 2>&1 </dev/null & pid=$!; while kill -0 $pid 2>/dev/null && ! kill -0 -- -$pid 2>/dev/null; do sleep 0.01; done; echo $pid', 'sh', log, process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
     cwd: root,
     env: { ...process.env, SETBRAINZ_DATA_DIR: dataDir() },
     encoding: 'utf8',
@@ -147,7 +162,7 @@ export function startProcessing(videoId) {
       update(downloadStatus, {
         status: 'failed',
         finishedAt: new Date().toISOString(),
-        error: 'work stopped when the app server stopped',
+        error: stoppedMessage(downloadStatus),
         processGroupId: null,
       })
     }
@@ -173,7 +188,7 @@ export function getProcessingStatus(videoId) {
     update(status, {
       status: 'failed',
       finishedAt: new Date().toISOString(),
-      error: 'work stopped when the app server stopped',
+      error: stoppedMessage(status),
       processGroupId: null,
     })
   }
