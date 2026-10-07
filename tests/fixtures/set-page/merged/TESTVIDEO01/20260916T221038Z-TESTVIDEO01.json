@@ -1,0 +1,446 @@
+{
+  "videoId": "TESTVIDEO01",
+  "createdAt": "2026-09-16T22:10:38Z",
+  "durationSeconds": 2000,
+  "inputs": {
+    "runs/TESTVIDEO01/tracklistify/tracklist.json": {
+      "sha256": "14355e822b997d074807b2e167538416f9274474bcd52c0167f36691b3dece0d"
+    },
+    "runs/TESTVIDEO01/ripthatset/run.log": {
+      "sha256": "c3d224959573d8a2f1a0529660652337e50fb5a7706c889c440b495179b3ffc0"
+    }
+  },
+  "params": {
+    "seg": 12,
+    "continuationGapSeconds": 480,
+    "maxChunkGap": 4,
+    "minRipThatSetRunCount": 2,
+    "gapRowSeconds": 90,
+    "lowConfidence": 75,
+    "chunkOrder": "repaired"
+  },
+  "rows": [
+    {
+      "uuid": "601778da-f6a4-5ff7-9993-561b0faa07c3",
+      "sha": "cdc2d3761020f574ffc94c0eced1b0c80dbb15357bdd1278c37863bc300d9b7b",
+      "kind": "track",
+      "earliest": 84,
+      "best": 84,
+      "latest": 360,
+      "variants": [
+        {
+          "title": "Fnlvat Url! (Rkgraqrq Zvk)",
+          "artist": "Qnepb & QiveAhaf",
+          "start": 84,
+          "end": 360,
+          "tracklistify": [
+            {
+              "start": 100,
+              "confidence": 93.20127948999999,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK001",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK002",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK003",
+                "spotify": "https://open.spotify.com/track/TESTLINK004",
+                "deezer": "https://www.deezer.com/track/TESTLINK005",
+                "tidal": "https://tidal.com/track/TESTLINK006"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 84,
+              "end": 360,
+              "count": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "66437eda-cfac-5877-acb0-700eeb4f7aee",
+      "sha": "3980d0389e1bf17acd72cd900eb88a5f2218e29db997287856ed5f57508e3b4c",
+      "kind": "track",
+      "earliest": 150,
+      "best": 150,
+      "latest": 210,
+      "variants": [
+        {
+          "title": "Ebyy",
+          "artist": "Senapvf Qnapr",
+          "start": 150,
+          "end": 210,
+          "tracklistify": [
+            {
+              "start": 150,
+              "confidence": 94.00404700000001,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK007"
+              }
+            }
+          ],
+          "ripthatset": []
+        }
+      ]
+    },
+    {
+      "uuid": "45e909aa-546e-553c-83d7-a1f16db80d2b",
+      "sha": "d953ffcafa8f61f4de87d2cd2ec6899f96fa793647effc41f8ce6ff61550c4d2",
+      "kind": "track",
+      "earliest": 336,
+      "best": 336,
+      "latest": 588,
+      "variants": [
+        {
+          "title": "Ebtryvgb",
+          "artist": "Ureaáa Pnggáarb & Xura",
+          "start": 336,
+          "end": 588,
+          "tracklistify": [
+            {
+              "start": 350,
+              "confidence": 99.74839687400001,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK008"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 336,
+              "end": 588,
+              "count": 19
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "6fd39e91-5fcf-5ca4-8c79-203918b10478",
+      "sha": "60537a281ba97dfcf095e166a455f744d23d6d9a60834544444056dd3d1ed1e9",
+      "kind": "track",
+      "earliest": 588,
+      "best": 588,
+      "latest": 720,
+      "variants": [
+        {
+          "title": "Ivrj bs Qrysg",
+          "artist": "Jruoon",
+          "start": 588,
+          "end": 720,
+          "tracklistify": [
+            {
+              "start": 650,
+              "confidence": 73.4997032,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK009",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK010",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK011"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 588,
+              "end": 720,
+              "count": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "ff97d9da-e739-54ad-acba-4ae97f4d4af5",
+      "sha": "6b8419ff1b34c55f70fcafa246dc8c49bd544cf56d4dc6fa1fbdaec548134343",
+      "kind": "track",
+      "earliest": 600,
+      "best": 600,
+      "latest": 660,
+      "variants": [
+        {
+          "title": "Rnegujbex",
+          "artist": "Wrss Qblyr",
+          "start": 600,
+          "end": 660,
+          "tracklistify": [
+            {
+              "start": 600,
+              "confidence": 72.30136440000001,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK012",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK013",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK014"
+              }
+            }
+          ],
+          "ripthatset": []
+        }
+      ]
+    },
+    {
+      "uuid": "fe423c7c-6a2b-51ff-be52-843b69dec4f3",
+      "sha": "f4bba19cc92d421c20bdabd712267797f61d5497c04b0cea87007cefac886f9f",
+      "kind": "track",
+      "earliest": 700,
+      "best": 732,
+      "latest": 768,
+      "variants": [
+        {
+          "title": "Qernzfgngr",
+          "artist": "Uneqg Nagbvar",
+          "start": 700,
+          "end": 768,
+          "tracklistify": [
+            {
+              "start": 700,
+              "confidence": 97.58412835600001,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK015"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 732,
+              "end": 768,
+              "count": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "b895f315-9b90-5541-aa3e-392ecd89b72b",
+      "sha": "437c54b888abbd5d283f75386d22ef5f38cfc899fa687aecfd892fd47af9cf04",
+      "kind": "gap",
+      "earliest": 768,
+      "best": 768,
+      "latest": 1000,
+      "variants": []
+    },
+    {
+      "uuid": "18ec6aee-469c-527c-b254-e182431cb923",
+      "sha": "d6abd749b6528f198663b53f9bde7f0a8c2e5b8ca6161cf95d490eeba8ea0a5c",
+      "kind": "track",
+      "earliest": 1000,
+      "best": 1080,
+      "latest": 1310,
+      "variants": [
+        {
+          "title": "Nyvir Ntnva - Fvatyr",
+          "artist": "Thl W",
+          "start": 1000,
+          "end": 1310,
+          "tracklistify": [
+            {
+              "start": 1000,
+              "confidence": 93.35634695,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK016",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK017",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK018",
+                "spotify": "https://open.spotify.com/track/TESTLINK019",
+                "deezer": "https://www.deezer.com/track/TESTLINK020",
+                "tidal": "https://tidal.com/track/TESTLINK021"
+              }
+            },
+            {
+              "start": 1250,
+              "confidence": 93.437194682,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK016",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK017",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK018",
+                "spotify": "https://open.spotify.com/track/TESTLINK019",
+                "deezer": "https://www.deezer.com/track/TESTLINK020",
+                "tidal": "https://tidal.com/track/TESTLINK021"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 1080,
+              "end": 1188,
+              "count": 8
+            },
+            {
+              "start": 1236,
+              "end": 1308,
+              "count": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "68da3f42-fc27-5027-b30d-5a522eb796e5",
+      "sha": "4293e66f001f3dba26a85e7fcbce05050033e43e8d3e199354ec72a530152dd2",
+      "kind": "track",
+      "earliest": 1150,
+      "best": 1150,
+      "latest": 1210,
+      "variants": [
+        {
+          "title": "Yhpx (Bevtvany Zvk)",
+          "artist": "Culyhz",
+          "start": 1150,
+          "end": 1210,
+          "tracklistify": [
+            {
+              "start": 1150,
+              "confidence": 93.31622114,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK022",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK023",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK024"
+              }
+            }
+          ],
+          "ripthatset": []
+        }
+      ]
+    },
+    {
+      "uuid": "193da898-4ac7-53de-9330-f26832667be3",
+      "sha": "c9dc70c7bd3d8567272ad5e2a6138f9ec967e82b88a40aeef9333f11dff9c125",
+      "kind": "track",
+      "earliest": 1200,
+      "best": 1200,
+      "latest": 1260,
+      "variants": [
+        {
+          "title": "Qernzf (srng. Ynavr Tneqare)",
+          "artist": "Qnivq Thrggn & ZBEGRA",
+          "start": 1200,
+          "end": 1260,
+          "tracklistify": [
+            {
+              "start": 1200,
+              "confidence": 96.07589250000001,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK025"
+              }
+            }
+          ],
+          "ripthatset": []
+        }
+      ]
+    },
+    {
+      "uuid": "fffe976f-8b45-5d3d-a49d-e0bb8fcdbee6",
+      "sha": "6ae545d156a104210e834be3011bb0451a7f3dc5ff3345a7c943a20b2a913921",
+      "kind": "track",
+      "earliest": 1300,
+      "best": 1308,
+      "latest": 1476,
+      "variants": [
+        {
+          "title": "Jurer'f Zl Ibvpr? (Rkgraqrq)",
+          "artist": "Zvgn Tnzv & RERM",
+          "start": 1300,
+          "end": 1476,
+          "tracklistify": [
+            {
+              "start": 1300,
+              "confidence": 99.785661696,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK026"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 1308,
+              "end": 1476,
+              "count": 11
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "29c0d6f7-9ce6-544b-8beb-4e440b55f199",
+      "sha": "2042ed10847d5a4033bc2797ad2496a9cf0084cbcdc542a21359356b56a68f8f",
+      "kind": "track",
+      "earliest": 1450,
+      "best": 1524,
+      "latest": 1800,
+      "variants": [
+        {
+          "title": "V Trg Qrrc (Zvkrq)",
+          "artist": "Ebynaq Pynex",
+          "start": 1450,
+          "end": 1788,
+          "tracklistify": [
+            {
+              "start": 1450,
+              "confidence": 99.288344402,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK027"
+              }
+            },
+            {
+              "start": 1700,
+              "confidence": 94.40481652,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK027",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK028",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK029"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 1476,
+              "end": 1500,
+              "count": 2
+            },
+            {
+              "start": 1692,
+              "end": 1788,
+              "count": 5
+            }
+          ]
+        },
+        {
+          "title": "V Trg Qrrc (Ebl Ebfrasryq Erzvk)",
+          "artist": "Ebynaq Pynex",
+          "start": 1500,
+          "end": 1800,
+          "tracklistify": [
+            {
+              "start": 1500,
+              "confidence": 99.92194176000001,
+              "links": {
+                "shazam": "https://www.shazam.com/track/TESTLINK030",
+                "spotify_search": "https://open.spotify.com/search/TESTLINK031",
+                "deezer_search": "https://www.deezer.com/search/TESTLINK032"
+              }
+            }
+          ],
+          "ripthatset": [
+            {
+              "start": 1524,
+              "end": 1692,
+              "count": 11
+            },
+            {
+              "start": 1752,
+              "end": 1800,
+              "count": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "da405208-25fc-514c-bd88-bea60abd5870",
+      "sha": "9c3f6fc04dc84ea574c1cdd9635227e350199ecdbbeebf066fff1c76416d1bed",
+      "kind": "gap",
+      "earliest": 1800,
+      "best": 1800,
+      "latest": 2000,
+      "variants": []
+    }
+  ]
+}

@@ -22,7 +22,9 @@ Setup: Node 20 or later, then `npm install` once, in the project root.
 
 `npm test` runs the fast test suite. It skips the browser tests, so it takes about a second.
 
-`npm run test:browser` runs the set page tests in a real headless browser. It takes minutes.
+`npm run test:browser` runs the set page tests in a real headless browser. It takes a few seconds.
+
+The browser tests read fixed data from `tests/fixtures/set-page/`. Each run copies it into a temporary folder and points `SETBRAINZ_DATA_DIR` there. The data is a 30 minute clip of a real set, with some decisions removed. All free text is ROT13: set title, track titles, artists, labels and notes. Apply ROT13 again to read it. The video ID is `TESTVIDEO01`, and every link is a fake link on the same host. Row `uuid` and decision `id` values are the real ones, so to match a fixture row to real data while you debug, search the real merged and decisions files for its `uuid` or `id`.
 
 The two set page tests in `tests/set-page.test.js` need the `playwright-cli` tool on `PATH`. Without it, those two tests skip and the rest of the suite still runs.
 

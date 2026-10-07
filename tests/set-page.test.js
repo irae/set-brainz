@@ -1,7 +1,10 @@
 import { test } from 'tap'
 import { once } from 'node:events'
+import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { buildRealSlice } from './helpers/real-slice.js'
 import { createApp } from '../app/server.js'
 
 const FAKE_YT = `
@@ -30,7 +33,10 @@ setTimeout(() => window.onYouTubeIframeAPIReady(), 0)
 const hms = (s) => [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map((n) => String(n).padStart(2, '0')).join(':')
 
 test('the set page, one browser and one page, in sequence', { bail: true, timeout: 240000 }, async (t) => {
-  const { dir, videoId } = buildRealSlice(t)
+  const videoId = 'TESTVIDEO01'
+  const dir = mkdtempSync(join(tmpdir(), 'set-brainz-page-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  cpSync(fileURLToPath(new URL('./fixtures/set-page', import.meta.url)), dir, { recursive: true })
   process.env.SETBRAINZ_DATA_DIR = dir
 
   const previews = []
