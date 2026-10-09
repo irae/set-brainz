@@ -134,7 +134,8 @@ function launch(status, tasks) {
   const runner = join(root, 'app/job-runner.js')
   const log = runnerLogPath(status.videoId)
   mkdirSync(dirname(log), { recursive: true })
-  const result = spawnSync('sh', ['-c', 'log=$1; shift; setsid "$@" >>"$log" 2>&1 </dev/null & pid=$!; while kill -0 $pid 2>/dev/null && ! kill -0 -- -$pid 2>/dev/null; do sleep 0.01; done; echo $pid', 'sh', log, process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
+  // /bin/sh is dash on Debian. dash kill rejects a negative process-group id, so this wait would run until the job exits and the server would stay blocked.
+  const result = spawnSync('bash', ['-c', 'log=$1; shift; setsid "$@" >>"$log" 2>&1 </dev/null & pid=$!; while kill -0 $pid 2>/dev/null && ! kill -0 -- -$pid 2>/dev/null; do sleep 0.01; done; echo $pid', 'bash', log, process.execPath, runner, status.videoId, JSON.stringify(tasks)], {
     cwd: root,
     env: { ...process.env, SETBRAINZ_DATA_DIR: dataDir() },
     encoding: 'utf8',

@@ -12,5 +12,7 @@ mkdir -p "$out"
 
 (cd "$root/tools/tracklistify" && uv run tracklistify -f all "$file") 2>&1 | tee "$out/run.log"
 
-newest="$(ls -td "$root"/tools/tracklistify/.tracklistify/output/*/ | head -1)"
-cp "$newest"tracklist.* "$out/"
+output_root="$root/tools/tracklistify/.tracklistify/output"
+json="$(find "$output_root" -type f -name '*.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+[ -n "$json" ] || { echo "tracklistify wrote no json" >&2; exit 1; }
+cp "$json" "$out/tracklist.json"

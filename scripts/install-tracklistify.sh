@@ -4,7 +4,8 @@
 set -euo pipefail
 
 mkdir -p tools
-[ -d tools/tracklistify ] || git clone --depth 1 https://github.com/betmoar/tracklistify.git tools/tracklistify
+# betmoar/tracklistify no longer exists. This fork keeps the same command and JSON fields.
+[ -d tools/tracklistify ] || git clone --depth 1 https://github.com/marcopeise/tracklistify-extended.git tools/tracklistify
 cd tools/tracklistify
 uv sync
 [ -e .env ] || cp .env.example .env

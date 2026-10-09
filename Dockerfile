@@ -1,10 +1,10 @@
 FROM node:24-bookworm-slim
 
-COPY --from=ghcr.io/astral-sh/uv:0 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 
 # hadolint ignore=DL3008
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg git python3 \
+ && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg git libgomp1 libsndfile1 python3 \
  && rm -rf /var/lib/apt/lists/* \
  && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
  && chmod 755 /usr/local/bin/yt-dlp
