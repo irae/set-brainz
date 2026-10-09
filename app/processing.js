@@ -140,7 +140,13 @@ function launch(status, tasks) {
     env: { ...process.env, SETBRAINZ_DATA_DIR: dataDir() },
     encoding: 'utf8',
   })
-  update(status, { processGroupId: Number(result.stdout) })
+  const groupId = Number(String(result.stdout).trim())
+  const current = readStatus(status.videoId)
+  // The runner writes this file while launch waits. A copy from before the start would cover a finished result.
+  if (current && current.startedAt === status.startedAt && (current.status === 'queued' || current.status === 'running')) {
+    update(current, { processGroupId: groupId })
+    Object.assign(status, current)
+  }
 }
 
 export function startDownload(videoId, sourceUrl) {
@@ -158,19 +164,20 @@ export function startDownload(videoId, sourceUrl) {
 
 export function startProcessing(videoId) {
   const downloadStatus = readStatus(videoId)
-  if (downloadStatus?.phase === 'download' && downloadStatus.status !== 'completed') {
-    if ((downloadStatus.status === 'queued' || downloadStatus.status === 'running') && !processGroupExists(downloadStatus.processGroupId)) {
-      update(downloadStatus, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        error: stoppedMessage(downloadStatus),
-        processGroupId: null,
-      })
-    }
+  const downloadLive = downloadStatus?.phase === 'download'
+    && (downloadStatus.status === 'queued' || downloadStatus.status === 'running')
+    && processGroupExists(downloadStatus.processGroupId)
+  if (downloadLive) {
     throw Object.assign(new Error(`download for set ${videoId} did not complete`), { code: 'download_incomplete' })
   }
   const mp3s = mp3Files(videoId)
-  if (!mp3s.length) throw Object.assign(new Error(`no MP3 audio for set ${videoId}`), { code: 'missing_audio' })
+  if (!mp3s.length) {
+    const incomplete = downloadStatus?.phase === 'download' && downloadStatus.status !== 'completed'
+    throw Object.assign(
+      new Error(incomplete ? `download for set ${videoId} did not complete` : `no MP3 audio for set ${videoId}`),
+      { code: incomplete ? 'download_incomplete' : 'missing_audio' },
+    )
+  }
   const data = dataDir()
   assertNoResults(videoId)
   const status = begin(videoId, 'process', 'tracklistify')

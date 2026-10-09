@@ -22,9 +22,8 @@ function showStatus(status) {
   $('#error').text(status?.error || '')
   const busy = status.status === 'queued' || status.status === 'running'
   const processingComplete = status.phase === 'process' && status.status === 'completed'
-  const downloadFailed = status.phase === 'download' && status.status === 'failed'
   $('#download').prop('hidden', status.audioReady || processingComplete).prop('disabled', busy)
-  $('#process').prop('hidden', !status.audioReady || processingComplete || downloadFailed)
+  $('#process').prop('hidden', !status.audioReady || processingComplete)
     .prop('disabled', busy)
   $('#decisions-link').html(status.phase === 'process' && status.status === 'completed'
     ? `<a href="/sets/${encodeURIComponent(videoId)}">Open decisions</a>`
