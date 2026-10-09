@@ -1,5 +1,6 @@
 import { test } from 'tap'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { makeEmptyDataDir } from './helpers/fixtures.js'
 import { getProcessingStatus, startDownload } from '../app/processing.js'
@@ -48,5 +49,31 @@ test('a status read after a runner crash points to the runner log (unit)', async
 
   write(new Date(Date.now() + 60000).toISOString())
   t.equal(getProcessingStatus(videoId).error, 'work stopped when the app server stopped', 'output of an older job does not count')
+  t.end()
+})
+
+test('the download script never runs yt-dlp over existing audio (functional)', async (t) => {
+  const dir = makeEmptyDataDir(t)
+  const bin = join(dir, 'bin')
+  mkdirSync(bin)
+  writeFileSync(join(bin, 'yt-dlp'), `#!/bin/sh\ntouch "${join(dir, 'yt-dlp-ran')}"\n`)
+  chmodSync(join(bin, 'yt-dlp'), 0o755)
+  const download = (videoId) => spawnSync('bash', ['scripts/download-audio.sh', videoId, 'http://127.0.0.1:9/fixture'], {
+    encoding: 'utf8',
+    env: { ...process.env, SETBRAINZ_DATA_DIR: dir, PATH: `${bin}:${process.env.PATH}` },
+  })
+
+  mkdirSync(join(dir, 'audio', 'TESTVIDEO01'), { recursive: true })
+  writeFileSync(join(dir, 'audio', 'TESTVIDEO01', 'fixture.mp3'), 'kept')
+  const refused = download('TESTVIDEO01')
+  t.equal(refused.status, 1)
+  t.match(refused.stderr, /audio already exists for set TESTVIDEO01/)
+  t.notOk(existsSync(join(dir, 'yt-dlp-ran')), 'yt-dlp does not run')
+  t.equal(readFileSync(join(dir, 'audio', 'TESTVIDEO01', 'fixture.mp3'), 'utf8'), 'kept')
+
+  mkdirSync(join(dir, 'audio', 'TESTVIDEO02'), { recursive: true })
+  writeFileSync(join(dir, 'audio', 'TESTVIDEO02', 'fixture.webm'), 'partial')
+  t.equal(download('TESTVIDEO02').status, 0, 'a folder with no MP3 still downloads')
+  t.ok(existsSync(join(dir, 'yt-dlp-ran')))
   t.end()
 })
