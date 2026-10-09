@@ -2,7 +2,7 @@ import express from 'express'
 import { existsSync, readdirSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { listSets, getSet, updateRow, mergeRow, insertEmptyRow, deleteRow, markPosted, clearPosted, isReadyToPost, exportableRows, createSourceSet, getSourceSet, getTracklistUrl, updateSourceSet, tracklistText } from './store.js'
@@ -15,11 +15,11 @@ const jqueryPath = require.resolve('jquery/dist/jquery.js')
 const execFileAsync = promisify(execFile)
 
 function publicDir() {
-  return process.env.SETBRAINZ_PUBLIC_DIR || defaultPublicDir
+  return resolve(process.env.SETBRAINZ_PUBLIC_DIR || defaultPublicDir)
 }
 
 function dataDir() {
-  return process.env.SETBRAINZ_DATA_DIR || 'data'
+  return resolve(process.env.SETBRAINZ_DATA_DIR || 'data')
 }
 
 async function lookupTitle(url) {

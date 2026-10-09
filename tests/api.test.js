@@ -2,7 +2,7 @@ import { test } from 'tap'
 import { once } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { makeEmptyDataDir, makeMergedRow, writeMergedFile } from './helpers/fixtures.js'
 import { createApp } from '../app/server.js'
 
@@ -193,6 +193,52 @@ test('api sets (functional)', (t) => {
     t.equal(res.status, 200)
     t.match(res.headers.get('content-type'), /audio\/mpeg/)
     t.equal(await res.text(), 'fixture audio')
+    t.end()
+  })
+
+  t.test('it serves byte ranges of local MP3 audio', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO79'
+    const audioDir = join(dir, 'audio', videoId)
+    mkdirSync(audioDir, { recursive: true })
+    writeFileSync(join(audioDir, 'fixture.mp3'), '0123456789abcdefghij')
+    const base = await startServer(t, dir)
+
+    const full = await fetch(`${base}/api/sets/${videoId}/audio`)
+    t.equal(full.status, 200)
+    t.equal(full.headers.get('content-type'), 'audio/mpeg')
+    t.equal(full.headers.get('accept-ranges'), 'bytes')
+    await full.text()
+
+    const first = await fetch(`${base}/api/sets/${videoId}/audio`, { headers: { range: 'bytes=0-1' } })
+    t.equal(first.status, 206)
+    t.equal(first.headers.get('content-type'), 'audio/mpeg')
+    t.equal(first.headers.get('content-range'), 'bytes 0-1/20')
+    t.equal(await first.text(), '01')
+
+    const middle = await fetch(`${base}/api/sets/${videoId}/audio`, { headers: { range: 'bytes=10-14' } })
+    t.equal(middle.status, 206)
+    t.equal(middle.headers.get('content-range'), 'bytes 10-14/20')
+    t.equal(await middle.text(), 'abcde')
+
+    const open = await fetch(`${base}/api/sets/${videoId}/audio`, { headers: { range: 'bytes=15-' } })
+    t.equal(open.status, 206)
+    t.equal(await open.text(), 'fghij')
+    t.end()
+  })
+
+  t.test('it serves local MP3 audio when the data folder is a relative path', async (t) => {
+    const dir = makeEmptyDataDir(t)
+    const videoId = 'TESTVIDEO80'
+    const audioDir = join(dir, 'audio', videoId)
+    mkdirSync(audioDir, { recursive: true })
+    writeFileSync(join(audioDir, 'fixture.mp3'), 'fixture audio')
+    const base = await startServer(t, relative(process.cwd(), dir))
+
+    const res = await fetch(`${base}/api/sets/${videoId}/audio`, { headers: { range: 'bytes=0-1' } })
+
+    t.equal(res.status, 206)
+    t.equal(await res.text(), 'fi')
     t.end()
   })
 
