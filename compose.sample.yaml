@@ -1,0 +1,13 @@
+services:
+  set-brainz:
+    build: .
+    image: set-brainz:prod
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "${SETBRAINZ_PORT:-8765}:8765"
+    volumes:
+      - ${SETBRAINZ_DATA:-./data}:/data
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true

@@ -1,0 +1,15 @@
+.git
+.claude
+.playwright
+.playwright-cli
+.superpowers
+.tap
+node_modules
+data
+tools
+scratchpad
+docs
+tests
+*.md
+Dockerfile
+compose*.yaml

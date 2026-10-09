@@ -80,3 +80,13 @@ Posting to 1001Tracklists:
 ```
 
 4. In the set page, a ready row shows `post to 1001`.
+
+## Docker
+
+`Dockerfile` builds an image with the app, `yt-dlp`, `ffmpeg`, Tracklistify and RipThatSet. The app runs as user 1000:1000 and keeps all its data in the `/data` volume.
+
+1. Copy `compose.sample.yaml` to `compose.yaml`.
+2. Set `SETBRAINZ_DATA` to the host data folder, owned by 1000:1000. Set `SETBRAINZ_PORT` to the host port.
+3. Run `docker compose up -d --build`.
+
+The image has no browser. "post to 1001" does not work in the container.
