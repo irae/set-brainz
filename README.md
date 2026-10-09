@@ -42,6 +42,8 @@ Underlying scripts, in run order:
 3. `scripts/install-ripthatset.sh` then `scripts/run-ripthatset.sh <set-id>`. Run after Tracklistify, not with it.
 4. `scripts/merge-results.py <set-id>` — merges both runs into `data/merged/<set-id>/<timestamp>-<set-id>.json`, all variants kept.
 
+`scripts/download-insomniac.py <episode-url> <out.mp3>` downloads one insomniacradio.com episode that yt-dlp cannot get. The site lists only recent episodes, and the script fails when the episode id is not in the list.
+
 By default, the app binds to every address. Set `SETBRAINZ_HOST` to narrow this to one address, for example the loopback address or a Tailscale address, and set `SETBRAINZ_PORT` to change the port. The app has no login, so the network it sits on decides who can use it.
 
 Local data:
