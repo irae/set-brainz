@@ -85,8 +85,19 @@ Posting to 1001Tracklists:
 
 `Dockerfile` builds an image with the app, `yt-dlp`, `ffmpeg`, Tracklistify and RipThatSet. The app runs as user 1000:1000 and keeps all its data in the `/data` volume.
 
-1. Copy `compose.sample.yaml` to `compose.yaml`.
-2. Set `SETBRAINZ_DATA` to the host data folder, owned by 1000:1000. Set `SETBRAINZ_PORT` to the host port.
-3. Run `docker compose up -d --build`.
+`compose.sample.yaml` is a starting compose file. Copy it to `compose.yaml`, set `SETBRAINZ_DATA` to the host data folder (owner uid 1000), and set `SETBRAINZ_PORT` to the host port. Then:
+
+```bash
+docker compose up -d --build
+```
+
+To update a checkout that is already running, pull this repo, then run Compose in the directory that holds `compose.yaml`. On a layout where that file sits next to this repo, both commands are in this directory:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+`up -d --build` builds the image and replaces the container. The data directory stays. `docker compose build` alone leaves the running container on the old image.
 
 The image has no browser. "post to 1001" does not work in the container.
