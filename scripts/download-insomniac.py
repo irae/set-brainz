@@ -7,11 +7,19 @@ HEADERS = {
     'Accept-Language': 'en-US',
 }
 SHOWS = 'https://firestore.googleapis.com/v1/projects/insomniac-radio-75d6b/databases/(default)/documents/shows/'
-KEY = 'REMOVED_FIREBASE_KEY'
 
 
 def fetch(url, **headers):
     return urllib.request.urlopen(urllib.request.Request(url, headers={**HEADERS, **headers}), timeout=60)
+
+
+def find_key(page_url):
+    html = fetch(page_url).read().decode('utf-8', 'replace')
+    for path in dict.fromkeys(re.findall(r'/_next/static/[^"\'\\ ]+\.js', html)):
+        found = re.search(r'AIza[0-9A-Za-z_-]{35}', fetch('https://insomniacradio.com' + path).read().decode('utf-8', 'replace'))
+        if found:
+            return found.group()
+    sys.exit('no Firebase API key found in the script bundles of ' + page_url)
 
 
 def main(page_url, out):
@@ -19,7 +27,8 @@ def main(page_url, out):
     if not match:
         sys.exit('usage: download-insomniac.py https://insomniacradio.com/shows/<show>/episodes/<episode> <out.mp3>')
     show_id, episode_id = match.groups()
-    show = json.load(fetch(f'{SHOWS}{show_id}?key={KEY}'))['fields']
+    key = find_key(page_url)
+    show = json.load(fetch(f'{SHOWS}{show_id}?key={key}'))['fields']
     episodes = [e['mapValue']['fields'] for e in show['episodes']['arrayValue'].get('values', [])]
     episode = next((e for e in episodes if e['id']['stringValue'] == episode_id), None)
     if not episode:
